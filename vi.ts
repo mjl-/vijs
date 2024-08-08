@@ -601,6 +601,25 @@ class Edit {
 			nr.whitespace(false)
 			return nr.offset()
 		}
+		case '-':
+		{
+			// Lines up, to first non-whitespace character.
+			cmd.times(() => br.line(true))
+			br.line(false)
+			const rr = new Reader(br.offset(), true, this.e.value)
+			rr.whitespace(false)
+			return rr.offset()
+		}
+		case '+':
+		{
+			// Lines down, to first non-whitespace character.
+			cmd.times(() => fr.line(true))
+			const rr = new Reader(fr.offset(), false, this.e.value)
+			rr.line(false)
+			const nr = new Reader(rr.offset(), true, this.e.value)
+			nr.whitespace(false)
+			return nr.offset()
+		}
 		case 'w':
 			cmd.times(() => {
 				const o = fr.offset()
