@@ -1644,6 +1644,8 @@
 					return;
 			}
 			if (modified) { } // Unused.
+			this.visualStr = '';
+			this.setCursor(this.cursor.cur);
 			this.setMode('command');
 		}
 	}
