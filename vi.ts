@@ -1598,11 +1598,13 @@ class Edit {
 		}
 		case 'd':
 		{
+			// delete
 			modified = this.replace(this.cursor, '', false)
 			this.cursor = new Cursor(c0, c0)
 			break
 		}
 		case 's':
+		case 'c':
 		{
 			modified = this.replace(this.cursor, '', false)
 			this.cursor = new Cursor(c0, c0)
