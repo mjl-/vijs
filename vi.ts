@@ -1249,6 +1249,12 @@ class Edit {
 		}
 		case 'y':
 		{
+			if (ctrl) {
+				// viewport lines up, we can't tell if cursor is visible, so we don't try to update.
+				this.e.scrollBy(0, -cmd.num*lineheight)
+				break
+			}
+
 			// yank
 			cmd.number()
 			const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, 'y'))
