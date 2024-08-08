@@ -593,6 +593,14 @@ class Edit {
 			cmd.noNumber()
 			fr.line(false)
 			return beforenewline()
+		case '^':
+		{
+			// To first non-whitespace character on line.
+			br.line(false)
+			const nr = new Reader(br.offset(), true, this.e.value)
+			nr.whitespace(false)
+			return nr.offset()
+		}
 		case 'w':
 			cmd.times(() => {
 				const o = fr.offset()
