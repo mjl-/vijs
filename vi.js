@@ -539,14 +539,6 @@
 		move(cmd, br, fr, endLineChar) {
 			log('trying move', cmd.s);
 			const r = cmd.get();
-			const atnewline = fr.peek() === '\n';
-			const beforenewline = () => {
-				let o = fr.offset();
-				if (this.mode === 'command' && !atnewline && fr.peek() === '\n') {
-					o--;
-				}
-				return o;
-			};
 			switch (r) {
 				case '0':
 					// Start of line.
@@ -555,8 +547,8 @@
 				case '$':
 					// End of line.
 					cmd.noNumber();
-					fr.line(false);
-					return beforenewline();
+					fr.line(this.mode !== 'command');
+					return fr.offset();
 				case '^':
 					{
 						// To first non-whitespace character on line.
@@ -649,7 +641,7 @@
 							fr.get();
 						}
 					});
-					return beforenewline();
+					return fr.offset();
 				case 'k':
 					// up
 					{
@@ -1367,7 +1359,7 @@
 				case 'V':
 					{
 						br.line(false);
-						fr.line(false);
+						fr.line(true);
 						this.cursor = new Cursor(fr.offset(), br.offset());
 						this.e.setSelectionRange(...this.cursor.ordered());
 						this.setMode('visualline');
