@@ -30,6 +30,128 @@ const clipboardReadText = async (): Promise<string> => {
 	return await window.navigator.clipboard.readText()
 }
 
+// wrap text at 78 characters, keep leading spaces or tabs when wrapping, and recognizing lines starting with "- " as enumeration.
+const wrap = (s: string): string => {
+	// Rather hacky, to be rewritten more properly.
+	// We read the input into tokens: a word, space, newline, leading whitespace.
+	// Then we generate output tokens, looking back in output and ahead for next tokens
+	// to determine if we should skip a space, insert a newline for wrapping, etc.
+
+	type tokenType = 'word' | 'space' | 'newline' | 'leadws'
+	type token = [tokenType, string]
+
+	const tokens: token[] = []
+	let w = ''
+	let linestart = true
+	const flush = () => {
+		if (!w) {
+			return
+		}
+		if (linestart) {
+			tokens.push(['leadws', w])
+		} else {
+			tokens.push(['word', w])
+		}
+		w = ''
+		linestart = false
+	}
+	for (const c of s) {
+		if (c === '\n') {
+			if (linestart && w) {
+				w = ''
+			}
+			flush()
+			tokens.push(['newline', ''])
+			linestart = true
+		} else if (c === ' ' || c === '\t') {
+			if (linestart) {
+				w += c
+				continue
+			}
+			flush()
+			const t = tokens[tokens.length-1]
+			if (t[0] === 'word') {
+				tokens.push(['space', ''])
+			}
+		} else {
+			if (w && linestart) {
+				flush()
+			}
+			linestart = false
+			w += c
+		}
+	}
+	flush()
+
+	log('tokens in', tokens)
+
+	// Process input tokens into output tokens.
+	let linelen = 0
+	let lineleadws = ''
+	let moreleadws = '' // empty, or set to two spaces when first token on line was "-" (enumeration).
+	let out: token[] = []
+	for (let i = 0; i < tokens.length; i++) {
+		// Current, prev and next token and data.
+		const [t, c] = tokens[i]
+		const [pt] = tokens[i-1] || ['', '']
+		const [nt, nc] = tokens[i+1] || ['', '']
+		const [nnt, nnc] = tokens[i+2] || ['', '']
+		if (t === 'word') {
+			// If it doesn't fit, wrap by starting with new line.
+			if (linelen > 0 && linelen+c.length >= 78) {
+				out.push(['newline', '\n'])
+				// Keep same leading whitespace.
+				if (lineleadws || moreleadws) {
+					out.push(['leadws', lineleadws+moreleadws])
+				}
+				linelen = lineleadws.length+moreleadws.length
+			} else if (out.length > 0 && out[out.length-1][0] === 'word') {
+				out.push(['space', ' '])
+			}
+			if (c === '-' && (out.length === 0 || out[out.length-1][0] === 'newline' || out.length === 1 && out[out.length-1][0] === 'leadws' || (out.length > 1 && out[out.length-1][0] === 'leadws' && out[out.length-2][0] === 'newline'))) {
+				moreleadws = '  '
+			}
+			out.push(['word', c])
+			linelen += c.length
+		} else if (t === 'space') {
+			if (nt !== 'word') {
+				continue
+			}
+			if (linelen > 0 && linelen+1+nc.length < 78) {
+				out.push(['space', ' '])
+				out.push(['word', nc])
+				linelen += 1+nc.length
+				i++
+			} else {
+				out.push(['newline', '\n'])
+				out.push(['leadws', lineleadws+moreleadws])
+				linelen = lineleadws.length+moreleadws.length
+			}
+		} else if (t === 'newline') {
+			if (pt && pt !== 'newline' && (nt == 'word' && nc !== '-' || nt === 'leadws' && (nc == lineleadws || nc === lineleadws+moreleadws) && !(nnt === 'word' && nnc === '-'))) {
+				// Merge next line into this.
+				if (nt === 'leadws') {
+					i++
+				}
+				continue
+			}
+			lineleadws = ''
+			moreleadws = ''
+			out.push(['newline', '\n'])
+			linelen = 0
+		} else if (t === 'leadws') {
+			linelen = c.length
+			lineleadws = c
+			moreleadws = ''
+			out.push(['leadws', c])
+		}
+	}
+
+	log('tokens out', out)
+
+	return out.map(t => t[1]).join('')
+}
+
 // We keep track of the cursor/selection. Cur is where new text is typed, start
 // is the start of selection. If there is no selection, cur is equal to start.
 // Direction is implied by cur & start.
@@ -954,6 +1076,8 @@ class Edit {
 			return
 		}
 
+		// todo: try to unify command & visual handling.
+
 		try {
 			if (this.mode === 'command') {
 				this.commandStr += e.key
@@ -988,7 +1112,7 @@ class Edit {
 	// command attempts to execute a command from the command buffer, throwing an error
 	// on incomplete and invalid commands.
 	async command(ctrl: boolean) {
-		const cmd = new Cmd(this.commandStr)
+		let cmd = new Cmd(this.commandStr)
 		const fr = new Reader(this.cursor.cur, true, this.e.value)
 		const br = new Reader(this.cursor.cur, false, this.e.value)
 
@@ -997,7 +1121,7 @@ class Edit {
 		// todo: include ctrl in all switch cases. we now ignore ctrl most of the times. will cause confusion.
 
 		cmd.number()
-		const k = cmd.peek()
+		const k = cmd.get()
 		switch (k) {
 		case 'i':
 		{
@@ -1072,7 +1196,6 @@ class Edit {
 				break
 			}
 			// delete movement
-			cmd.get()
 			cmd.number()
 			const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, 'd'))
 			modified = this.replace(c, '', false)
@@ -1103,7 +1226,6 @@ class Edit {
 		case 'c':
 		{
 			// replace movement
-			cmd.get()
 			cmd.number()
 			const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, 'c'))
 			modified = this.replace(c, '', false)
@@ -1113,7 +1235,6 @@ class Edit {
 		case 'x':
 		{
 			// delete
-			cmd.get()
 			cmd.times(() => fr.get())
 			modified = this.replace(new Cursor(this.cursor.cur, fr.offset()), '', false)
 			break
@@ -1121,7 +1242,6 @@ class Edit {
 		case 'X':
 		{
 			// backspace
-			cmd.get()
 			cmd.times(() => br.get())
 			modified = this.replace(new Cursor(br.offset(), this.cursor.cur), '', false)
 			this.setCursor(br.offset())
@@ -1130,7 +1250,6 @@ class Edit {
 		case 'y':
 		{
 			// yank
-			cmd.get()
 			cmd.number()
 			const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, 'y'))
 			const s = this.read(c)
@@ -1144,7 +1263,6 @@ class Edit {
 		case 'Y':
 		{
 			// whole lines
-			cmd.get()
 			br.line(false)
 			cmd.times(() => fr.line(true))
 			const s = this.read(new Cursor(br.offset(), fr.offset()))
@@ -1158,7 +1276,6 @@ class Edit {
 		case 'p':
 		{
 			// paste
-			cmd.get()
 			let s = ''
 			try {
 				s = await clipboardReadText()
@@ -1173,7 +1290,6 @@ class Edit {
 		case 'P':
 		{
 			// paste before
-			cmd.get()
 			let s = ''
 			try {
 				s = await clipboardReadText()
@@ -1189,7 +1305,6 @@ class Edit {
 		case '<':
 		{
 			// unindent
-			cmd.get()
 			cmd.number()
 			br.line(false)
 			const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, '<'))
@@ -1201,7 +1316,6 @@ class Edit {
 		case '>':
 		{
 			// indent
-			cmd.get()
 			cmd.number()
 			br.line(false)
 			const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, '>'))
@@ -1317,8 +1431,9 @@ class Edit {
 		{
 			if (ctrl) {
 				this.redo()
+				break
 			}
-			break
+			throw new BadCommandError('unrecognized')
 		}
 		case 'f':
 		{
@@ -1332,6 +1447,26 @@ class Edit {
 		{
 			if (ctrl) {
 				// todo: show location somewhere
+				throw new BadCommandError('unrecognized')
+			}
+
+			const c = cmd.get()
+			switch (c) {
+			case 'q':
+			{
+				cmd.number()
+				const o = this.move(cmd, br, fr, 'q')
+				br.line(false)
+				const c = new Cursor(o, br.offset())
+				const text = wrap(this.read(c))
+				modified = this.replace(c, text, false)
+				const nbr = new Reader(c.start+text.length, false, this.e.value)
+				nbr.line(false)
+				this.setCursor(nbr.offset())
+				break
+			}
+			default:
+				throw new BadCommandError('unrecognized')
 			}
 			break
 		}
@@ -1343,6 +1478,8 @@ class Edit {
 				break
 			}
 
+			cmd = new Cmd(this.commandStr)
+			cmd.number()
 			const ncur = this.move(cmd, br, fr, '')
 			this.setCursor(ncur)
 		}
@@ -1359,7 +1496,7 @@ class Edit {
 	// visual is like command but for visual and visualline modes.
 	async visual(ctrl: boolean) {
 		const line = this.mode === 'visualline'
-		const cmd = new Cmd(this.visualStr)
+		let cmd = new Cmd(this.visualStr)
 		const fr = new Reader(this.cursor.cur, true, this.e.value)
 		const br = new Reader(this.cursor.cur, false, this.e.value)
 
@@ -1367,7 +1504,7 @@ class Edit {
 
 		const [c0] = this.cursor.ordered()
 
-		const k = this.visualStr.charAt(this.visualStr.length-1)
+		const k = cmd.get()
 		switch (k) {
 		case 'i':
 		{
@@ -1485,7 +1622,26 @@ class Edit {
 			this.e.setSelectionRange(...this.cursor.ordered())
 			return
 		}
+		case 'g':
+		{
+			const kk = cmd.get()
+			switch (kk) {
+			case 'q':
+			{
+				const text = wrap(this.read(this.cursor))
+				modified = this.replace(this.cursor, text, false)
+				const nbr = new Reader(this.cursor.start+text.length, false, this.e.value)
+				nbr.line(false)
+				this.setCursor(nbr.offset())
+				break
+			}
+			default:
+				throw new BadCommandError('unknown key')
+			}
+			break
+		}
 		default:
+			cmd = new Cmd(this.visualStr)
 			cmd.number()
 			const offset = this.move(cmd, br, fr, '')
 			log('visual move, offset', offset, this.cursor)
