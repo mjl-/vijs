@@ -875,6 +875,35 @@
 			this.replace(c, nt, false);
 			return nt.length;
 		}
+		join(c, between) {
+			log('join', { c, between });
+			let s = this.read(c);
+			const newline = s && s.charAt(s.length - 1) === '\n';
+			if (newline) {
+				s = s.substring(0, s.length - 1);
+			}
+			let r = '';
+			let ro = 0;
+			const lines = s.split('\n');
+			for (let i = 0; i < lines.length; i++) {
+				let line = lines[i];
+				if (i !== lines.length - 1) {
+					line = line.trimEnd() + between;
+				}
+				if (i !== 0) {
+					line = line.trimStart();
+				}
+				r += line;
+				if (i !== lines.length - 1) {
+					ro = r.length - between.length;
+				}
+			}
+			if (newline) {
+				r += '\n';
+			}
+			this.replace(c, r, false);
+			this.setCursor(c.ordered()[0] + ro);
+		}
 		// close history item and set last text used in a command (e.g. newly typed, or
 		// replacement text).
 		closeHist() {
@@ -1300,13 +1329,12 @@
 					}
 				case 'J':
 					{
-						// join with next line
-						fr.line(false);
-						const o = fr.offset();
-						fr.get();
-						if (o !== fr.offset()) {
-							modified = this.replace(new Cursor(o, fr.offset()), " ", false);
+						// join with next line, merging trailing/leading whitespace into a single space
+						if (cmd.num === 1) {
+							cmd.num = 2;
 						}
+						cmd.times(() => fr.line(true));
+						this.join(new Cursor(fr.offset(), this.cursor.cur), ' ');
 						break;
 					}
 				case '~':
@@ -1449,6 +1477,15 @@
 									this.setCursor(nbr.offset());
 									break;
 								}
+							case 'J':
+								{
+									if (cmd.num === 1) {
+										cmd.num = 2;
+									}
+									cmd.times(() => fr.line(true));
+									this.join(new Cursor(fr.offset(), this.cursor.cur), '');
+									break;
+								}
 							default:
 								throw new BadCommandError('unrecognized');
 						}
@@ -1563,17 +1600,7 @@
 					}
 				case 'J':
 					{
-						let s = this.read(this.cursor);
-						const newline = s && s.charAt(s.length - 1) === '\n';
-						if (newline) {
-							s = s.substring(0, s.length - 1);
-						}
-						s = s.replace(/\n/g, ' ');
-						if (newline) {
-							s += '\n';
-						}
-						this.replace(this.cursor, s, false);
-						this.cursor = new Cursor(c0 + s.length, c0);
+						this.join(this.cursor, ' ');
 						break;
 					}
 				case '~':
@@ -1615,6 +1642,9 @@
 									this.setCursor(nbr.offset());
 									break;
 								}
+							case 'J':
+								this.join(this.cursor, '');
+								break;
 							default:
 								throw new BadCommandError('unknown key');
 						}
