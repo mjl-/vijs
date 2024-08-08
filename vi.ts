@@ -1393,6 +1393,15 @@ class Edit {
 			this.search(false)
 			break
 		}
+		case '#':
+		{
+			br.nonwhitespacepunct()
+			fr.nonwhitespacepunct()
+			const s = this.read(new Cursor(br.offset(), fr.offset()))
+			this.lastSearch = " " + s
+			this.search(true)
+			break
+		}
 		case 'n':
 		{
 			this.search(false)
