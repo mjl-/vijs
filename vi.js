@@ -19,11 +19,17 @@
 	const clipboardWriteText = async (s) => {
 		const w = window;
 		!w.browser?.permissions?.request || await w.browser.permissions.request({ permissions: ['clipboardWrite'] });
+		if (!window.navigator.clipboard) {
+			throw new Error('clipboard not available in insecure context (e.g. plain http)');
+		}
 		await window.navigator.clipboard.writeText(s);
 	};
 	const clipboardReadText = async () => {
 		const w = window;
 		!w.browser?.permissions?.request || await w.browser.permissions.request({ permissions: ['clipboardRead'] });
+		if (!window.navigator.clipboard) {
+			throw new Error('clipboard not available in insecure context (e.g. plain http)');
+		}
 		return await window.navigator.clipboard.readText();
 	};
 	// wrap text at 78 characters, keep leading spaces or tabs when wrapping, and recognizing lines starting with "- " as enumeration.

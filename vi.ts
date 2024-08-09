@@ -21,12 +21,18 @@ const log = (...l: any[]) => {
 const clipboardWriteText = async (s: string) => {
 	const w = window as any
 	!w.browser?.permissions?.request || await w.browser.permissions.request({permissions: ['clipboardWrite']})
+	if (!window.navigator.clipboard) {
+		throw new Error('clipboard not available in insecure context (e.g. plain http)')
+	}
 	await window.navigator.clipboard.writeText(s)
 }
 
 const clipboardReadText = async (): Promise<string> => {
 	const w = window as any
 	!w.browser?.permissions?.request || await w.browser.permissions.request({permissions: ['clipboardRead']})
+	if (!window.navigator.clipboard) {
+		throw new Error('clipboard not available in insecure context (e.g. plain http)')
+	}
 	return await window.navigator.clipboard.readText()
 }
 
