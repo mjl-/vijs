@@ -585,9 +585,17 @@
 			this.e.removeEventListener('keydown', this.tabdown);
 			this.e.removeEventListener('blur', this.blurx);
 		}
-		// Mouseup is registered while in command/visual mode. It switches to
-		// insert mode and syncs the cursor, the user likely clicked somewhere.
+		// Mouseup is registered while in command/visual mode. If new and non-empty text
+		// was selected, the mode is switched to visual. Otherwise it is switched to
+		// insert mode.
 		mouseup() {
+			const a = this.elemCursor().ordered();
+			const b = this.cursor.ordered();
+			if (a[0] !== a[1] && (a[0] !== b[0] || a[1] !== b[1] || a[2] !== b[2])) {
+				this.cursor = this.elemCursor();
+				this.setMode('visual');
+				return;
+			}
 			this.off();
 			this.cursor = this.elemCursor();
 		}
