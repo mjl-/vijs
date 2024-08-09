@@ -1406,7 +1406,11 @@
 				case 'x':
 					{
 						// delete
-						cmd.times(() => fr.get());
+						cmd.times(() => {
+							if (fr.peek() !== '\n') {
+								fr.get();
+							}
+						});
 						modified = this.replace(new Cursor(this.cursor.cur, fr.offset()), '', false);
 						break;
 					}
