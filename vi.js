@@ -1807,6 +1807,7 @@
 						// Swap direction.
 						this.cursor = new Cursor(this.cursor.start, this.cursor.cur);
 						this.e.setSelectionRange(...this.cursor.ordered());
+						this.visualStr = '';
 						return;
 					}
 				case 'g':
