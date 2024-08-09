@@ -486,6 +486,11 @@ class Edit {
 	commandStr = ''
 	visualStr = '' // Like commandStr, but for visual mode.
 
+	// For searching for a single character on same line, with f/F/t/T and ;/,
+	charSearch = ''
+	charSearchForward = true
+	charSearchBefore = false // Stop before character.
+
 	// For searching. Only with "*" and "n" and "N" for now.
 	lastSearch = ''
 	lastSearchRegexp: RegExp | undefined
@@ -838,6 +843,64 @@ class Edit {
 				}
 			})
 			cur(fr)
+			break
+		}
+		case 'f':
+		case 't':
+		case 'F':
+		case 'T':
+		case ';':
+		case ',':
+		{
+			// character search on same line.
+			// 'f' is forward search, 'F' is backward. 't' and 'T' are similar, but 't' stops
+			// before the character and 'T' stops after the character. ';' repeats the last
+			// search (with same direction), and ',' repeats in the reverse direction.
+			if (r !== ';' && r !== ',') {
+				this.charSearch = cmd.get()
+				this.charSearchForward = r === 'f' || r === 't'
+				this.charSearchBefore = r === 't' || r === 'T'
+			}
+			if (!this.charSearch) {
+				break
+			}
+			let forward = this.charSearchForward
+			if (r === ',') {
+				forward = !forward
+			}
+			let rr = forward ? fr : br
+			const o = rr.offset()
+			if (forward && this.charSearchBefore) {
+				// Ensure we get beyond the character under the cursor.
+				const c0 = rr.get() // We would pass this anyway below.
+				const c1 = rr.get()
+				if (c0 && c0 !== '\n' && c1 === this.charSearch) {
+					rr.unget(1) // Unget c1, it'll be skipped below.
+				}
+			}
+			cmd.times((i: number) => {
+				// Make progress.
+				if (rr.peek() !== '\n') {
+					rr.get()
+				}
+				rr.gatherx(!forward && !this.charSearchBefore || i < cmd.num-1, c => c !== this.charSearch && c !== '\n')
+			})
+
+			// Verify there was indeed a match.
+			if (forward || this.charSearchBefore) {
+				if (rr.peek() !== this.charSearch) {
+					break
+				}
+			} else {
+				if (rr.forward().peek() !== this.charSearch) {
+					break
+				}
+			}
+
+			if (forward && this.charSearchBefore && o !== rr.offset()) {
+				rr.unget(1)
+			}
+			cur(rr)
 			break
 		}
 		case 'i':
@@ -1735,22 +1798,6 @@ class Edit {
 			this.undo()
 			break
 		}
-		case 'r':
-		{
-			if (ctrl) {
-				this.redo()
-				break
-			}
-			throw new BadCommandError('unrecognized')
-		}
-		case 'f':
-		{
-			if (ctrl) {
-				this.e.scrollBy(0, this.e.scrollHeight)
-				break
-			}
-			throw new BadCommandError('unrecognized')
-		}
 		case 'g':
 		{
 			if (ctrl) {
@@ -1793,6 +1840,14 @@ class Edit {
 			// todo: find a better place to do this, or a better place to handle motions.
 			if (k === 'b' && ctrl) {
 				this.e.scrollBy(0, -this.e.scrollHeight)
+				break
+			}
+			if (k === 'f' && ctrl) {
+				this.e.scrollBy(0, this.e.scrollHeight)
+				break
+			}
+			if (k === 'r' && ctrl) {
+				this.redo()
 				break
 			}
 
