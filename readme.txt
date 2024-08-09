@@ -34,7 +34,7 @@ Since vi.js uses basic textarea/input elements, it inherits some
 limitations/behaviour:
 
 Textareas don't expose whether text (e.g. the selection) is visible in the
-viewport. This limits how vi.js can implement some commands/movements.
+viewport. This limits how vi.js can implement some commands/motions.
 
 Insert mode is handled by the browser (with the exeception of Tab, which can
 insert a literal tab), including undo/redo while typing. JS doesn't have access
@@ -46,7 +46,7 @@ single history change to undo/redo.
 In vi/vim, the cursor is typically "on" a character. With a textarea, it is
 shown between characters. The position at the end of the line, after the last
 character, before the newline, is not normally a separate position in vi. vi.js
-lets you navigate to these positions, which changes how some move keys work.
+lets you navigate to these positions, which changes how some motion keys work.
 
 Access to the clipboard is only explicitly with the "y" and "p" keys. Commands
 that remove/replace text don't change the clipboard.
@@ -69,12 +69,12 @@ firefox as "back" and can't be intercepted.
 - Plenty of vi/vim keys haven't been implemented yet. People typically use a
   subset of all the many vi/vim key bindings. Please submit a PR for commands
   you're missing and want. Keep the code maintainable.
-- Custom regexp search. Search only works with * and n/N at the moment. Need an
+- Custom regexp search. Search only works with */# and n/N at the moment. Need an
   additional input element to type the search regexp.
 - Ed(it) mode, in additional input element below textarea (only for textareas).
 - There is no replace mode (not sure if worth it).
 - Repeat doesn't always work nicely with commands on visual selections.
-- Implement some move commands more precisely, also dependent on mode.
+- Implement some motion commands more precisely, also dependent on mode.
 - Chrome/chromium add-on, if feasible.
 - Package up vi.js to a decent registry (jsr?) for use with npm.
 - Wait for someone to explain how everyone else gets vi editing in their browsers...

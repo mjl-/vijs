@@ -159,13 +159,16 @@
 			this.cur = cur;
 			this.start = start;
 		}
+		isForward() {
+			return this.cur >= this.start;
+		}
 		// As expected by setSelectionRange.
 		ordered() {
-			let s = this.cur, e = this.start;
-			if (s > e) {
-				return [e, s, 'backward'];
+			const c = this.cur, s = this.start;
+			if (c < s) {
+				return [c, s, 'backward'];
 			}
-			return [s, e, 'forward'];
+			return [s, c, 'forward'];
 		}
 	}
 	// We build up multicharacter commands, try to parse them. These errors can
@@ -175,7 +178,7 @@
 	}
 	class BadNumberError extends Error {
 	}
-	class BadMoveError extends Error {
+	class BadMotionError extends Error {
 	}
 	class NoNumberError extends Error {
 	}
@@ -240,78 +243,85 @@
 		// Execute fn "num" times (default 1).
 		times(fn) {
 			for (let i = 0; i < this.num; i++) {
-				fn();
+				fn(i);
 			}
 		}
 	}
 	// ForwardSource returns characters from a string, moving forward.
 	class ForwardSource {
 		s;
+		o = 0;
 		constructor(s) {
 			this.s = s;
 			this.s = s;
+			this.o = 0;
 		}
 		peek() {
-			if (!this.s) {
+			if (this.o >= this.s.length) {
 				return '';
 			}
-			return this.s.charAt(0) || '';
+			return this.s.charAt(this.o) || '';
 		}
 		get() {
-			if (!this.s) {
+			if (this.o >= this.s.length) {
 				return '';
 			}
-			const r = this.s.charAt(0) || '';
-			this.s = this.s.substring(1);
+			const r = this.s.charAt(this.o);
+			this.o++;
 			return r;
 		}
 	}
 	// BackwardSource returns characters from a string, moving backwards.
 	class BackwardSource {
 		s;
+		o = 0;
 		constructor(s) {
 			this.s = s;
 			this.s = s;
+			this.o = this.s.length;
 		}
 		peek() {
-			if (!this.s) {
+			if (this.o <= 0) {
 				return '';
 			}
-			return this.s.charAt(this.s.length - 1) || '';
+			return this.s.charAt(this.o - 1);
 		}
 		get() {
-			if (!this.s) {
+			if (this.o <= 0) {
 				return '';
 			}
-			const r = this.s.charAt(this.s.length - 1) || '';
-			this.s = this.s.substring(0, this.s.length - 1);
-			return r;
+			this.o--;
+			return this.s.charAt(this.o);
 		}
 	}
 	const isSpace = (c) => c.trim() === ''; // todo: better
 	const isPunct = (c) => /\p{P}/u.test(c);
 	// Reader has convenience functions to navigate text (in a Source). Go to
-	// start/end of line, etc. Used to implement vi move commands.
+	// start/end of line, etc. Used to implement vi motion commands.
 	class Reader {
 		start;
-		forward;
+		fwd;
+		s;
 		n; // Number of characters read, excluding peek.
 		src;
-		constructor(start, forward, s) {
+		constructor(start, fwd, s) {
 			this.start = start;
-			this.forward = forward;
-			if (forward) {
+			this.fwd = fwd;
+			this.s = s;
+			if (fwd) {
 				this.src = new ForwardSource(s.substring(start));
 			}
 			else {
 				this.src = new BackwardSource(s.substring(0, start));
 			}
+			this.start = start;
 			this.n = 0;
-			this.forward = forward;
+			this.fwd = fwd;
+			this.s = s;
 		}
 		// Offset, in characters.
 		offset() {
-			return this.start + (this.forward ? this.n : -this.n);
+			return this.start + (this.fwd ? this.n : -this.n);
 		}
 		peek() {
 			return this.src.peek();
@@ -323,6 +333,24 @@
 			}
 			return c;
 		}
+		unget(n) {
+			if (this.fwd) {
+				this.src.o -= n;
+			}
+			else {
+				this.src.o += n;
+			}
+			this.n -= n;
+		}
+		clone() {
+			return new Reader(this.start, this.fwd, this.s);
+		}
+		forward() {
+			return new Reader(this.offset(), true, this.s);
+		}
+		backward() {
+			return new Reader(this.offset(), false, this.s);
+		}
 		line(includeNewline) {
 			let s = '';
 			let eof = false;
@@ -332,7 +360,7 @@
 					eof = !s;
 					break;
 				}
-				if (c == '\n') {
+				if (c === '\n') {
 					if (includeNewline) {
 						this.get();
 					}
@@ -343,22 +371,39 @@
 			}
 			return [s, eof];
 		}
-		gather(keep) {
-			let s = '';
-			let eof = false;
+		gather(fn) {
+			return this.gathernx(1, false, fn);
+		}
+		gathera(fn) {
+			return this.gathernx(1, true, fn);
+		}
+		gatherna(n, fn) {
+			return this.gathernx(n, true, fn);
+		}
+		gatherx(around, fn) {
+			return this.gathernx(1, around, fn);
+		}
+		gathern(n, fn) {
+			return this.gathernx(n, false, fn);
+		}
+		gathernx(n, around, fn) {
+			let chars = [];
 			while (true) {
-				const c = this.peek();
-				if (!c) {
-					eof = !s;
-					break;
+				while (chars.length < n) {
+					const c = this.get();
+					if (!c) {
+						return this;
+					}
+					chars.push(c);
 				}
-				if (!keep(c)) {
-					break;
+				if (!fn(chars.join(''))) {
+					if (!around) {
+						this.unget(chars.length);
+					}
+					return this;
 				}
-				this.get();
-				s += c;
+				chars.shift();
 			}
-			return [s, eof];
 		}
 		whitespace(newline) {
 			return this.gather(c => (c !== '\n' || newline) && isSpace(c));
@@ -535,36 +580,58 @@
 			this.e.setSelectionRange(...this.cursor.ordered());
 			// todo: scroll to ensure visibility. possibly call focus(), trigger a keypress, set selectionrange (possibly also without selection)
 		}
-		// Move tries to execute a vi move command, returning the resulting new offset.
-		move(cmd, br, fr, endLineChar) {
-			log('trying move', cmd.s);
+		// Motion tries to execute a vi motion command, returning new cursor.
+		motion(cmd, br, fr, endLineChar) {
+			log('trying motion', cmd.s, this.cursor.cur, br.offset(), fr.offset());
+			let nc = new Cursor(this.cursor.cur, this.cursor.start);
+			const cur = (r) => {
+				nc.cur = r.offset();
+				log('motion set cursor', this.cursor, nc);
+			};
+			const expand = (cr, sr) => {
+				// Expand selection while keeping direction.
+				nc.cur = cr.offset();
+				const start = sr.offset();
+				const fwd = nc.cur >= start;
+				if (fwd) {
+					nc.start = Math.min(nc.start, start);
+				}
+				else {
+					nc.start = Math.max(nc.start, start);
+				}
+				log('motion expand', this.cursor, nc);
+			};
 			const r = cmd.get();
 			switch (r) {
 				case '0':
 					// Start of line.
 					br.line(false);
-					return br.offset();
+					cur(br);
+					break;
 				case '$':
 					// End of line.
 					cmd.noNumber();
 					fr.line(this.mode !== 'command');
-					return fr.offset();
+					cur(fr);
+					break;
 				case '^':
 					{
 						// To first non-whitespace character on line.
 						br.line(false);
-						const nr = new Reader(br.offset(), true, this.e.value);
-						nr.whitespace(false);
-						return nr.offset();
+						fr = new Reader(br.offset(), true, this.e.value);
+						fr.whitespace(false);
+						cur(fr);
+						break;
 					}
 				case '-':
 					{
 						// Lines up, to first non-whitespace character.
 						cmd.times(() => br.line(true));
 						br.line(false);
-						const rr = new Reader(br.offset(), true, this.e.value);
-						rr.whitespace(false);
-						return rr.offset();
+						fr = new Reader(br.offset(), true, this.e.value);
+						fr.whitespace(false);
+						cur(fr);
+						break;
 					}
 				case '+':
 					{
@@ -572,9 +639,10 @@
 						cmd.times(() => fr.line(true));
 						const rr = new Reader(fr.offset(), false, this.e.value);
 						rr.line(false);
-						const nr = new Reader(rr.offset(), true, this.e.value);
-						nr.whitespace(false);
-						return nr.offset();
+						fr = new Reader(rr.offset(), true, this.e.value);
+						fr.whitespace(false);
+						cur(fr);
+						break;
 					}
 				case 'w':
 					cmd.times(() => {
@@ -585,14 +653,16 @@
 						}
 						fr.whitespace(true);
 					});
-					return fr.offset();
+					cur(fr);
+					break;
 				case 'W':
 					// word
 					cmd.times(() => {
 						fr.nonwhitespace();
 						fr.whitespace(true);
 					});
-					return fr.offset();
+					cur(fr);
+					break;
 				case 'b':
 					// to begin of (previous) word
 					cmd.times(() => {
@@ -602,28 +672,32 @@
 							br.nonwhitespacepunct();
 						}
 					});
-					return br.offset();
+					cur(br);
+					break;
 				case 'B':
 					// like 'b', skip interpunction too
 					cmd.times(() => {
 						br.whitespace(true);
 						br.nonwhitespace();
 					});
-					return br.offset();
+					cur(br);
+					break;
 				case 'e':
 					// to end of (next) word
 					cmd.times(() => {
 						fr.whitespace(true);
 						fr.nonwhitespacepunct();
 					});
-					return fr.offset();
+					cur(fr);
+					break;
 				case 'E':
 					// like 'e', skip interpunction too
 					cmd.times(() => {
 						fr.whitespace(true);
 						fr.nonwhitespace();
 					});
-					return fr.offset();
+					cur(fr);
+					break;
 				case 'h':
 					// left
 					cmd.times(() => {
@@ -632,7 +706,8 @@
 							br.get();
 						}
 					});
-					return br.offset();
+					cur(br);
+					break;
 				case 'l':
 					// right
 					cmd.times(() => {
@@ -641,7 +716,8 @@
 							fr.get();
 						}
 					});
-					return fr.offset();
+					cur(fr);
+					break;
 				case 'k':
 					// up
 					{
@@ -650,15 +726,16 @@
 							br.line(true);
 							br.line(false);
 						});
-						const rr = new Reader(br.offset(), true, this.e.value);
+						br = new Reader(br.offset(), true, this.e.value);
 						for (let i = 0; i < so.length; i++) {
-							const c = rr.peek();
+							const c = br.peek();
 							if (!c || c === '\n') {
 								break;
 							}
-							rr.get();
+							br.get();
 						}
-						return rr.offset();
+						cur(br);
+						break;
 					}
 				case 'j':
 					// down
@@ -674,23 +751,126 @@
 							}
 							fr.get();
 						}
-						return fr.offset();
+						cur(fr);
+						break;
+					}
+				case 'i':
+				case 'a':
+					{
+						// i for inner, excluding surrounding space or special characters
+						// a for around, including surround space or special characters
+						const around = r === 'a';
+						const kk = cmd.get();
+						switch (kk) {
+							case 'w':
+								// word without interpunction
+								br.nonwhitespacepunct();
+								cmd.times((i) => {
+									const o = fr.offset();
+									fr.nonwhitespacepunct();
+									if (o === fr.offset()) {
+										fr.punctuation();
+									}
+									if (around || i < cmd.num - 1) {
+										fr.whitespace(true);
+									}
+								});
+								break;
+							case 'W':
+								// word with interpunction
+								br.nonwhitespace();
+								cmd.times((i) => {
+									fr.nonwhitespace();
+									if (around || i < cmd.num - 1) {
+										fr.whitespace(false);
+									}
+								});
+								break;
+							case 's':
+								// sentence
+								br.gathern(2, c => c !== '\n\n' && c.charAt(1) !== '.');
+								cmd.times((i) => {
+									if (i > 0) {
+										fr.get();
+									}
+									// First of "." or "\n\n"
+									fr.gathera(c => c !== '.');
+									const fr2 = fr.clone().gatherna(2, c => c !== '\n\n');
+									if (fr2.offset() < fr.offset()) {
+										fr = fr2;
+									}
+									if (around || i < cmd.num - 1) {
+										fr.whitespace(true);
+									}
+								});
+								break;
+							case 'p':
+								// paragraph
+								br.gathern(2, c => c !== '\n\n');
+								br = br.forward().gather(c => c === '\n');
+								cmd.times(() => fr.gathernx(2, false, c => c !== '\n\n'));
+								while (fr.peek() === '\n') {
+									fr.get();
+									if (!around) {
+										break;
+									}
+								}
+								break;
+							case '\'':
+								// single quoted string
+								br.gatherx(around, c => c !== '\'');
+								fr.gatherx(around, c => c !== '\'');
+								break;
+							case '"':
+								// double quoted string
+								br.gatherx(around, c => c !== '"');
+								fr.gatherx(around, c => c !== '"');
+								break;
+							case '(':
+							case ')':
+							case 'b':
+								// matching parenthesis
+								br.gatherx(around, c => c !== '(');
+								fr.gatherx(around, c => c !== ')');
+								break;
+							case '<':
+							case '>':
+								// matching <>'s
+								br.gatherx(around, c => c !== '<');
+								fr.gatherx(around, c => c !== '>');
+								break;
+							case 't':
+								// matching tag, <x>...</x>
+								throw new BadMotionError('todo: at and it not yet implemented');
+							case 'B':
+								// matching accolades
+								br.gatherx(around, c => c !== '{');
+								fr.gatherx(around, c => c !== '}');
+								break;
+							default:
+								throw new BadMotionError('unknown motion');
+						}
+						expand(fr, br);
+						break;
 					}
 				case 'G':
 					{
 						if (cmd.numStr === "") {
 							// to eof
-							return this.e.value.length;
+							fr = new Reader(this.e.value.length - 1, true, this.e.value);
+							cur(fr);
+							break;
 						}
 						// to absolute line number (1 is first)
-						const r = new Reader(0, true, this.e.value);
+						fr = new Reader(0, true, this.e.value);
 						for (let i = 1; i < cmd.num; i++) {
-							const [_, eof] = r.line(true);
+							const [_, eof] = fr.line(true);
 							if (eof) {
 								break;
 							}
 						}
-						return r.offset();
+						cur(fr);
+						break;
 					}
 				case '%':
 					{
@@ -703,7 +883,8 @@
 							fr.get();
 							const index = starts.indexOf(c);
 							if (this.expandNested(fr, starts[index], ends[index]) > 0) {
-								return fr.offset();
+								cur(fr);
+								break;
 							}
 						}
 						if (c && ends.includes(c)) {
@@ -711,10 +892,11 @@
 							const index = ends.indexOf(c);
 							if (this.expandNested(br, ends[index], starts[index]) > 0) {
 								br.get();
-								return br.offset();
+								cur(br);
+								break;
 							}
 						}
-						break;
+						throw new BadMotionError('no match');
 					}
 				case '{':
 					// Backwards to empty line.
@@ -730,7 +912,8 @@
 							}
 						}
 					});
-					return br.offset();
+					cur(br);
+					break;
 				case '}':
 					// Forward to empty line.
 					cmd.times(() => {
@@ -743,15 +926,17 @@
 							}
 						}
 					});
-					return fr.offset();
+					cur(fr);
+					break;
 				default:
-					if (r === endLineChar) {
-						br.line(false);
-						cmd.times(() => fr.line(true));
-						return fr.offset();
+					if (r !== endLineChar) {
+						throw new BadMotionError('bad motion command');
 					}
+					br.line(false);
+					cmd.times(() => fr.line(true));
+					return new Cursor(fr.offset(), br.offset());
 			}
-			throw new BadMoveError('bad move command');
+			return nc;
 		}
 		// Match nested characters like "[" and "]", keeping nesting into
 		// account. Returns new offset. Used for implementing "%".
@@ -1020,7 +1205,7 @@
 			this.setCursor(c);
 		}
 		// key handles key pressed, some non-vi key combo's are handled first, then keys
-		// are handled as vi commands/movements.
+		// are handled as vi commands/motions.
 		async key(xe) {
 			const e = xe;
 			log('vi key', xe);
@@ -1082,7 +1267,7 @@
 					}
 					// Need to wait for more of the command.
 				}
-				else if (e instanceof BadNumberError || e instanceof BadMoveError || e instanceof NoNumberError || e instanceof BadCommandError) {
+				else if (e instanceof BadNumberError || e instanceof BadMotionError || e instanceof NoNumberError || e instanceof BadCommandError) {
 					if (this.mode === 'command') {
 						log('invalid command, resetting', this.commandStr);
 						this.commandStr = '';
@@ -1181,11 +1366,11 @@
 							this.e.scrollBy(0, this.e.scrollHeight / 2);
 							break;
 						}
-						// delete movement
+						// delete
 						cmd.number();
-						const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, 'd'));
+						const c = this.motion(cmd, br, fr, 'd');
 						modified = this.replace(c, '', false);
-						this.setCursor(br.offset());
+						this.setCursor(c.ordered()[0]);
 						break;
 					}
 				case 'C':
@@ -1211,9 +1396,9 @@
 					}
 				case 'c':
 					{
-						// replace movement
+						// replace
 						cmd.number();
-						const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, 'c'));
+						const c = this.motion(cmd, br, fr, 'c');
 						modified = this.replace(c, '', false);
 						this.off();
 						break;
@@ -1242,7 +1427,7 @@
 						}
 						// yank
 						cmd.number();
-						const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, 'y'));
+						const c = this.motion(cmd, br, fr, 'y');
 						const s = this.read(c);
 						try {
 							await clipboardWriteText(s);
@@ -1302,10 +1487,10 @@
 						// unindent
 						cmd.number();
 						br.line(false);
-						const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, '<'));
+						const c = this.motion(cmd, br, fr, '<');
 						this.unindent(c);
-						this.setCursor(br.offset());
 						modified = true;
+						this.setCursor(this.cursor.cur);
 						break;
 					}
 				case '>':
@@ -1313,9 +1498,9 @@
 						// indent
 						cmd.number();
 						br.line(false);
-						const c = new Cursor(this.cursor.cur, this.move(cmd, br, fr, '>'));
+						const c = this.motion(cmd, br, fr, '>');
 						this.indent(c);
-						this.setCursor(br.offset());
+						this.setCursor(this.cursor.cur);
 						modified = true;
 						break;
 					}
@@ -1459,9 +1644,10 @@
 							case 'q':
 								{
 									cmd.number();
-									const o = this.move(cmd, br, fr, 'q');
-									br.line(false);
-									const c = new Cursor(o, br.offset());
+									const nc = this.motion(cmd, br, fr, 'q');
+									const nr = new Reader(nc.ordered()[0], false, br.s);
+									nr.line(false);
+									const c = new Cursor(nc.ordered()[1], nr.offset());
 									const text = wrap(this.read(c));
 									modified = this.replace(c, text, false);
 									const nbr = new Reader(c.start + text.length, false, this.e.value);
@@ -1484,15 +1670,15 @@
 						break;
 					}
 				default:
-					// todo: find a better place to do this, or a better place to handle moves.
+					// todo: find a better place to do this, or a better place to handle motions.
 					if (k === 'b' && ctrl) {
 						this.e.scrollBy(0, -this.e.scrollHeight);
 						break;
 					}
 					cmd = new Cmd(this.commandStr);
 					cmd.number();
-					const ncur = this.move(cmd, br, fr, '');
-					this.setCursor(ncur);
+					const nc = this.motion(cmd, br, fr, '');
+					this.setCursor(nc.cur);
 			}
 			if (modified) {
 				this.lastCommand = this.commandStr;
@@ -1506,17 +1692,13 @@
 		async visual(ctrl) {
 			const line = this.mode === 'visualline';
 			let cmd = new Cmd(this.visualStr);
-			const fr = new Reader(this.cursor.cur, true, this.e.value);
-			const br = new Reader(this.cursor.cur, false, this.e.value);
+			let fr = new Reader(this.cursor.cur, true, this.e.value);
+			let br = new Reader(this.cursor.cur, false, this.e.value);
 			let modified = false;
 			const [c0] = this.cursor.ordered();
 			const k = cmd.get();
+			log('visual key', k, this.cursor);
 			switch (k) {
-				case 'i':
-					{
-						this.off();
-						break;
-					}
 				case 'v':
 					{
 						this.setMode('visual');
@@ -1647,21 +1829,44 @@
 				default:
 					cmd = new Cmd(this.visualStr);
 					cmd.number();
-					const offset = this.move(cmd, br, fr, '');
-					log('visual move, offset', offset, this.cursor);
-					if (line) {
-						const swapDirection = (this.cursor.cur > this.cursor.start) !== (offset > this.cursor.start);
-						const origCur = this.cursor.cur;
-						const r = new Reader(offset, offset > this.cursor.start, this.e.value);
-						r.line(false);
-						this.cursor.cur = r.offset();
-						if (swapDirection) {
-							this.cursor.start = origCur;
+					const oc = this.cursor;
+					// In visualline mode, the selection includes the ending newline. But motions assume
+					// that newline isn't included. We compensate the cursor while executing the motion.
+					if (line && new Reader(this.cursor.ordered()[1], false, this.e.value).peek() === '\n') {
+						if (this.cursor.isForward()) {
+							this.cursor.cur--;
+							br = new Reader(this.cursor.cur, false, this.e.value);
+							fr = new Reader(this.cursor.cur, true, this.e.value);
 						}
-						log('cursor now', this.cursor.ordered());
+						else {
+							this.cursor.start--;
+						}
 					}
-					else {
-						this.cursor.cur = offset;
+					try {
+						const nc = this.motion(cmd, br, fr, '');
+						log('visual motion', nc, this.cursor);
+						this.cursor = nc;
+					}
+					catch (e) {
+						// Restore after possible line-compensation.
+						this.cursor = oc;
+						throw e;
+					}
+					if (line) {
+						// Expand to whole lines.
+						let [s, e, dir] = this.cursor.ordered();
+						const nbr = new Reader(s, false, this.e.value);
+						nbr.line(false);
+						s = nbr.offset();
+						const nfr = new Reader(e, true, this.e.value);
+						nfr.line(true);
+						e = nfr.offset();
+						if (dir === 'forward') {
+							this.cursor = new Cursor(e, s);
+						}
+						else {
+							this.cursor = new Cursor(s, e);
+						}
 					}
 					this.e.setSelectionRange(...this.cursor.ordered());
 					this.visualStr = '';
