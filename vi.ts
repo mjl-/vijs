@@ -165,6 +165,16 @@ class Cursor {
 		return this.cur >= this.start
 	}
 
+	atStart(): Cursor {
+		const o = Math.min(this.cur, this.start)
+		return new Cursor(o, o)
+	}
+
+	atEnd(): Cursor {
+		const o = Math.max(this.cur, this.start)
+		return new Cursor(o, o)
+	}
+
 	// As expected by setSelectionRange.
 	ordered(): [number, number, 'forward' | 'backward'] {
 		const c = this.cur, s = this.start
@@ -1531,8 +1541,13 @@ class Edit {
 				alert('reading from clipboard: '+(err.message || '(no details)'))
 				break
 			}
-			modified = this.replace(this.cursor, s, false)
-			this.setCursor(this.cursor.cur+1)
+			if (s.includes('\n')) {
+				fr.line(true)
+			} else {
+				fr.get()
+			}
+			modified = this.replace(new Cursor(fr.offset(), fr.offset()), s, false)
+			this.setCursor(fr.offset())
 			break
 		}
 		case 'P':
@@ -1545,7 +1560,7 @@ class Edit {
 				alert('reading from clipboard: '+(err.message || '(no details)'))
 				break
 			}
-			br.get()
+			br.line(false)
 			modified = this.replace(new Cursor(br.offset(), br.offset()), s, false)
 			this.setCursor(br.offset())
 			break
@@ -1810,6 +1825,7 @@ class Edit {
 			} catch (err: any) {
 				alert('writing to clipboard: '+(err.message || '(no details)'))
 			}
+			this.cursor = this.cursor.atStart()
 			break
 		}
 		case 'p':

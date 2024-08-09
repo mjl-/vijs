@@ -162,6 +162,14 @@
 		isForward() {
 			return this.cur >= this.start;
 		}
+		atStart() {
+			const o = Math.min(this.cur, this.start);
+			return new Cursor(o, o);
+		}
+		atEnd() {
+			const o = Math.max(this.cur, this.start);
+			return new Cursor(o, o);
+		}
 		// As expected by setSelectionRange.
 		ordered() {
 			const c = this.cur, s = this.start;
@@ -1466,8 +1474,14 @@
 							alert('reading from clipboard: ' + (err.message || '(no details)'));
 							break;
 						}
-						modified = this.replace(this.cursor, s, false);
-						this.setCursor(this.cursor.cur + 1);
+						if (s.includes('\n')) {
+							fr.line(true);
+						}
+						else {
+							fr.get();
+						}
+						modified = this.replace(new Cursor(fr.offset(), fr.offset()), s, false);
+						this.setCursor(fr.offset());
 						break;
 					}
 				case 'P':
@@ -1481,7 +1495,7 @@
 							alert('reading from clipboard: ' + (err.message || '(no details)'));
 							break;
 						}
-						br.get();
+						br.line(false);
 						modified = this.replace(new Cursor(br.offset(), br.offset()), s, false);
 						this.setCursor(br.offset());
 						break;
@@ -1741,6 +1755,7 @@
 						catch (err) {
 							alert('writing to clipboard: ' + (err.message || '(no details)'));
 						}
+						this.cursor = this.cursor.atStart();
 						break;
 					}
 				case 'p':
