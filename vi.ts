@@ -640,9 +640,7 @@ class Edit {
 	}
 
 	// Motion tries to execute a vi motion command, returning new cursor.
-	motion(cmd: Cmd, br: Reader, fr: Reader, endLineChar: string): Cursor {
-		log('trying motion', cmd.s, this.cursor.cur, br.offset(), fr.offset())
-
+	motion(cmd: Cmd, ctrl: boolean, br: Reader, fr: Reader, endLineChar: string): Cursor {
 		let nc = new Cursor(this.cursor.cur, this.cursor.start)
 		const cur = (r: Reader) => {
 			nc.cur = r.offset()
@@ -661,8 +659,12 @@ class Edit {
 			log('motion expand', this.cursor, nc)
 		}
 
-		const r = cmd.get()
-		switch (r) {
+		let k = cmd.get()
+		if (ctrl && cmd.peek() === '') {
+			k = 'ctrl-'+k
+		}
+		log('trying motion', k, cmd.s, ctrl, this.cursor.cur, br.offset(), fr.offset())
+		switch (k) {
 		case '0':
 			// Start of line.
 			br.line(false)
@@ -856,16 +858,16 @@ class Edit {
 			// 'f' is forward search, 'F' is backward. 't' and 'T' are similar, but 't' stops
 			// before the character and 'T' stops after the character. ';' repeats the last
 			// search (with same direction), and ',' repeats in the reverse direction.
-			if (r !== ';' && r !== ',') {
+			if (k !== ';' && k !== ',') {
 				this.charSearch = cmd.get()
-				this.charSearchForward = r === 'f' || r === 't'
-				this.charSearchBefore = r === 't' || r === 'T'
+				this.charSearchForward = k === 'f' || k === 't'
+				this.charSearchBefore = k === 't' || k === 'T'
 			}
 			if (!this.charSearch) {
 				break
 			}
 			let forward = this.charSearchForward
-			if (r === ',') {
+			if (k === ',') {
 				forward = !forward
 			}
 			let rr = forward ? fr : br
@@ -908,7 +910,7 @@ class Edit {
 		{
 			// i for inner, excluding surrounding space or special characters
 			// a for around, including surround space or special characters
-			const around = r === 'a'
+			const around = k === 'a'
 
 			const kk = cmd.get()
 			switch (kk) {
@@ -1081,7 +1083,7 @@ class Edit {
 			break
 
 		default:
-			if (r !== endLineChar) {
+			if (k !== endLineChar) {
 				throw new BadMotionError('bad motion command')
 			}
 			br.line(false)
@@ -1419,8 +1421,16 @@ class Edit {
 			return
 		}
 
-		// todo: only handle actual keys, not shift/ctrl/etc.
-		if (e.key.length !== 1 || e.isComposing) {
+		// We don't handle shift/ctrl/alt/meta keys explicitly, at most as modifiers to regular keys.
+		switch (e.key) {
+		case 'Shift':
+		case 'Control':
+		case 'Alt':
+		case 'AltGraph':
+		case 'Meta':
+			return
+		}
+		if (e.isComposing) {
 			return
 		}
 
@@ -1466,10 +1476,12 @@ class Edit {
 
 		let modified = false
 
-		// todo: include ctrl in all switch cases. we now ignore ctrl most of the times. will cause confusion.
-
 		cmd.number()
-		const k = cmd.get()
+		let k = cmd.get()
+		if (ctrl && cmd.peek() === '') {
+			k = 'ctrl-'+k
+		}
+		log('command, key', k)
 		switch (k) {
 		case 'i':
 		{
@@ -1537,15 +1549,14 @@ class Edit {
 			modified = this.replace(new Cursor(this.cursor.cur, fr.offset()), "\n", false)
 			break
 		}
+		case 'ctrl-d':
+			this.e.scrollBy(0, this.e.scrollHeight/2)
+			break
 		case 'd':
 		{
-			if (ctrl) {
-				this.e.scrollBy(0, this.e.scrollHeight/2)
-				break
-			}
 			// delete
 			cmd.number()
-			const c = this.motion(cmd, br, fr, 'd')
+			const c = this.motion(cmd, ctrl, br, fr, 'd')
 			modified = this.replace(c, '', false)
 			this.setCursor(c.ordered()[0])
 			break
@@ -1575,7 +1586,7 @@ class Edit {
 		{
 			// replace
 			cmd.number()
-			const c = this.motion(cmd, br, fr, 'c')
+			const c = this.motion(cmd, ctrl, br, fr, 'c')
 			modified = this.replace(c, '', false)
 			this.off()
 			break
@@ -1599,17 +1610,16 @@ class Edit {
 			this.setCursor(br.offset())
 			break
 		}
+		case 'ctrl-y':
+			// viewport lines up, we can't tell if cursor is visible, so we don't try to update.
+			this.e.scrollBy(0, -cmd.num*lineheight)
+			break
 		case 'y':
 		{
-			if (ctrl) {
-				// viewport lines up, we can't tell if cursor is visible, so we don't try to update.
-				this.e.scrollBy(0, -cmd.num*lineheight)
-				break
-			}
 
 			// yank
 			cmd.number()
-			const c = this.motion(cmd, br, fr, 'y')
+			const c = this.motion(cmd, ctrl, br, fr, 'y')
 			const s = this.read(c)
 			try {
 				await clipboardWriteText(s)
@@ -1670,7 +1680,7 @@ class Edit {
 			// unindent
 			cmd.number()
 			br.line(false)
-			const c = this.motion(cmd, br, fr, '<')
+			const c = this.motion(cmd, ctrl, br, fr, '<')
 			this.unindent(c)
 			modified = true
 			this.setCursor(this.cursor.cur)
@@ -1681,7 +1691,7 @@ class Edit {
 			// indent
 			cmd.number()
 			br.line(false)
-			const c = this.motion(cmd, br, fr, '>')
+			const c = this.motion(cmd, ctrl, br, fr, '>')
 			this.indent(c)
 			this.setCursor(this.cursor.cur)
 			modified = true
@@ -1732,14 +1742,10 @@ class Edit {
 			this.setMode('visualline')
 			break
 		}
-		case 'e':
-		{
-			if (ctrl) {
-				// viewport lines down, we can't tell if cursor is visible, so we don't try to update.
-				this.e.scrollBy(0, cmd.num*lineheight)
-			}
+		case 'ctrl-e':
+			// viewport lines down, we can't tell if cursor is visible, so we don't try to update.
+			this.e.scrollBy(0, cmd.num*lineheight)
 			break
-		}
 		case '*':
 		{
 			br.nonwhitespacepunct()
@@ -1794,23 +1800,22 @@ class Edit {
 			return
 		}
 		case 'u':
-		{
 			this.undo()
 			break
-		}
+		case 'ctrl-r':
+			this.redo()
+			break
 		case 'g':
 		{
-			if (ctrl) {
-				// todo: show location somewhere
-				throw new BadCommandError('unrecognized')
+			let c = cmd.get()
+			if (ctrl && cmd.peek() === '') {
+				c = 'ctrl-'+c
 			}
-
-			const c = cmd.get()
 			switch (c) {
 			case 'q':
 			{
 				cmd.number()
-				const nc = this.motion(cmd, br, fr, 'q')
+				const nc = this.motion(cmd, ctrl, br, fr, 'q')
 				const nr = new Reader(nc.ordered()[0], false, br.s)
 				nr.line(false)
 				const c = new Cursor(nc.ordered()[1], nr.offset())
@@ -1836,24 +1841,16 @@ class Edit {
 			break
 		}
 
+		case 'ctrl-b':
+			this.e.scrollBy(0, -this.e.scrollHeight)
+			break
+		case 'ctrl-f':
+			this.e.scrollBy(0, this.e.scrollHeight)
+			break
 		default:
-			// todo: find a better place to do this, or a better place to handle motions.
-			if (k === 'b' && ctrl) {
-				this.e.scrollBy(0, -this.e.scrollHeight)
-				break
-			}
-			if (k === 'f' && ctrl) {
-				this.e.scrollBy(0, this.e.scrollHeight)
-				break
-			}
-			if (k === 'r' && ctrl) {
-				this.redo()
-				break
-			}
-
 			cmd = new Cmd(this.commandStr)
 			cmd.number()
-			const nc = this.motion(cmd, br, fr, '')
+			const nc = this.motion(cmd, ctrl, br, fr, '')
 			this.setCursor(nc.cur)
 		}
 
@@ -1877,7 +1874,10 @@ class Edit {
 
 		const [c0] = this.cursor.ordered()
 
-		const k = cmd.get()
+		let k = cmd.get()
+		if (ctrl && cmd.peek() === '') {
+			k = 'ctrl-'+k
+		}
 		log('visual key', k, this.cursor)
 		switch (k) {
 		case 'v':
@@ -1933,15 +1933,10 @@ class Edit {
 			this.cursor = new Cursor(c0 + s.length, c0)
 			break
 		}
-		case 'e':
-		{
-			if (ctrl) {
-				// viewport lines down, we can't tell if cursor is visible, so we don't try to update.
-				this.e.scrollBy(0, cmd.num*lineheight)
-				return
-			}
-			throw new BadCommandError('unknown key')
-		}
+		case 'ctrl-e':
+			// viewport lines down, we can't tell if cursor is visible, so we don't try to update.
+			this.e.scrollBy(0, cmd.num*lineheight)
+			return
 		case '<':
 		{
 			const n = this.unindent(this.cursor)
@@ -2025,7 +2020,7 @@ class Edit {
 			}
 
 			try {
-				const nc = this.motion(cmd, br, fr, '')
+				const nc = this.motion(cmd, ctrl, br, fr, '')
 				log('visual motion', nc, this.cursor)
 				this.cursor = nc
 			} catch (e) {
