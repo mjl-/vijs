@@ -809,6 +809,37 @@ class Edit {
 			cur(fr)
 			break
 		}
+		case '(':
+		{
+			// to start of prev sentence
+			// todo: handle words that contain dots better, like "e.g." and "vi.js".
+			cmd.times(() => {
+				br.get() // Make progress.
+				br.gathern(2, c => c !== '\n\n' && c.charAt(1) !== '.')
+				if (br.peek() === '.') {
+					br = br.forward().whitespace(true)
+				}
+			})
+			cur(br)
+			break
+		}
+		case ')':
+		{
+			// to start of next sentence
+			cmd.times(() => {
+				fr.get() // Make progress.
+				fr.gathern(2, c => c !== '\n\n' && c.charAt(0) !== '.')
+				if (fr.peek() === '.') {
+					fr.get()
+					fr.whitespace(true)
+				} else {
+					fr.get() // Skip leading \n.
+					fr.gather(c => c === ' ' || c === '\t')
+				}
+			})
+			cur(fr)
+			break
+		}
 		case 'i':
 		case 'a':
 		{
