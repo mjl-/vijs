@@ -1,8 +1,8 @@
 {
 	"manifest_version": 2,
 	"name": "Vi Editing Mode",
-	"version": "0.0.2",
-	"description": "Add a vi editing mode to textarea and input elements, so you can use vim keys/shortcuts to edit and navigate text.\n\nAutomatic and non-intrusive: By default, inputs/textareas work as they normally do (insert mode, handled by the browser). Hitting escape enables command mode on the focused element. The only change in appearance of the element is a box-shadow, it is otherwise just a regular textarea/input element. When in insert mode again, the textarea/input element is back under control and in style of the browser, with one exception: The tab key inserts a literal tab instead of changing focus. Original tab handling is restored on element blur, triggered by hitting the tab key while in command mode.\n\nFeatures:\n- Command, visual and visual-line modes.\n- Undo/redo.\n- Repeat.\n\nBecause vi editing mode uses standard textarea/input elements, behaviour deviates from vi/vim in various ways.",
+	"version": "0.0.3",
+	"description": "Automatically and non-intrusively add a vi editing mode to all textareas/inputs. Behaviour remains unchanged (like insert mode), hitting Escape enables command mode.",
 	"icons": {
 		"48": "icon-48.png",
 		"96": "icon-96.png"
