@@ -463,8 +463,8 @@ class Reader {
 
 // TextHist is an entry in the undo/redo history.
 class TextHist {
-	constructor(public c: Cursor, public obuf: string, public nbuf: string) {
-		this.c = c // Range that was replaced (from original).
+	constructor(public replaced: Cursor, public obuf: string, public nbuf: string) {
+		this.replaced = replaced // Range that was replaced (from original).
 		this.obuf = obuf // Original text that was replaced.
 		this.nbuf = nbuf // New text, placed instead of obuf, at c.
 	}
@@ -1331,7 +1331,7 @@ class Edit {
 			if (this.histOpen && this.history.length > 0) {
 				const h = this.history[this.history.length-1]
 				log('expanding last history item', h)
-				const [c0] = h.c.ordered()
+				const [c0] = h.replaced.ordered()
 				if (c0 + h.nbuf.length === s) {
 					h.nbuf += text
 					recorded = true
@@ -1361,19 +1361,18 @@ class Edit {
 
 		// Prepare new last known value, applying change in reverse.
 		let last = this.lastKnownValue
-		const [hs] = h.c.ordered()
+		const [hs] = h.replaced.ordered()
 		last = last.substring(0, hs) + h.obuf + last.substring(hs+h.nbuf.length)
 
 		this.future.push(h)
 		this.closeHist()
-		const [c0] = h.c.ordered()
+		const [c0] = h.replaced.ordered()
 		const c1 = c0 + h.nbuf.length
 		this.replaceHist(new Cursor(c0, c1), h.obuf, false)
 		this.lastKnownValue = last // replaceHist has set lastKnownValue too
 		log('lastKnownValue after undo', last)
 		this.histOpen = false
-		const c = c0 + h.obuf.length
-		this.setCursor(c)
+		this.setCursor(c0)
 	}
 
 	// redo the last undone change, storing the change in the history again.
@@ -1385,9 +1384,9 @@ class Edit {
 		log('redoing', h)
 		this.history.push(h)
 		this.closeHist()
-		this.replaceHist(h.c, h.nbuf, false)
+		this.replaceHist(h.replaced, h.nbuf, false)
 		this.histOpen = false
-		const c = h.c.start + h.nbuf.length
+		const c = h.replaced.start
 		this.setCursor(c)
 	}
 
