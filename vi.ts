@@ -474,9 +474,12 @@ type mode = 'insert' | 'command' | 'visual' | 'visualline'
 
 // Edit tracks vi editing state for a textarea or input element.
 class Edit {
-	// We highlight elements with a box-shadow, but store the original to
-	// restore when going into insert mode.
+	// We highlight elements with a box-shadow & outline color, storing the originals
+	// to restore when going into insert mode. Firefox normally shows a 2px solid blue
+	// outline on the focused element. We override that outline with one matching our
+	// box-shadow color.
 	origBoxShadow = ''
+	origOutline = ''
 
 	mode: mode
 	cursor: Cursor
@@ -543,20 +546,28 @@ class Edit {
 		if (mode === 'insert') {
 			this.mode = mode
 			this.e.style.boxShadow = this.origBoxShadow
+			this.e.style.outline = this.origOutline
 			this.origBoxShadow = ''
+			this.origOutline = ''
 			return
 		}
 
 		if (this.mode === 'insert') {
 			this.origBoxShadow = this.e.style.boxShadow
+			this.origOutline = this.e.style.outline
 		}
 		this.mode = mode
+		// Note: firefox adds a 2px blue outline to the focused element. Yellow should be a
+		// good contrasting color for the default command mode.
 		if (mode === 'command') {
-			this.e.style.boxShadow = '0 0 4px 2px #2190f2'
+			this.e.style.boxShadow = '0 0 6px 2px #f9bc07' // yellow
+			this.e.style.outline = '2px solid #f9bc07'
 		} else if (mode === 'visual') {
-			this.e.style.boxShadow = '0 0 6px 2px #f9bc07'
+			this.e.style.boxShadow = '0 0 6px 2px #a8e352' // green
+			this.e.style.outline = '2px solid #a8e352'
 		} else if (mode === 'visualline') {
-			this.e.style.boxShadow = '0 0 6px 2px #57db0d'
+			this.e.style.boxShadow = '0 0 6px 2px #ec6e47' // red
+			this.e.style.outline = '2px solid #ec6e47'
 		}
 	}
 
@@ -2076,9 +2087,11 @@ const viSelectOn = (elem: HTMLSelectElement) => {
 
 	log('viSelectOn', elem)
 	const state = {
-		origBoxShadow: elem.style.boxShadow
+		origBoxShadow: elem.style.boxShadow,
+		origOutline: elem.style.outline
 	}
-	elem.style.boxShadow = '0 0 4px 2px #2190f2'
+	elem.style.boxShadow = '0 0 6px 2px #f9bc07' // yellow
+	elem.style.outline = '2px solid #f9bc07'
 	xelem._viEditingModeSelect = state
 
 	// todo: figure out why keyboard events no longer fire when select is open with options visible (on linux x11). we don't get a blur event either, but it feels like the focus is out of the document.
@@ -2131,6 +2144,7 @@ const viSelectOn = (elem: HTMLSelectElement) => {
 		elem.removeEventListener('blur', unregister)
 		elem.removeEventListener('keydown', keydown)
 		elem.style.boxShadow = state.origBoxShadow
+		elem.style.outline = state.origOutline
 		delete xelem._viEditingModeSelect
 	}
 
