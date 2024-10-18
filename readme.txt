@@ -105,6 +105,12 @@ modeled after https://github.com/mjl-/vixen, a vi-clone written in Limbo.
 vi.js has simpler requirements than duit and vixen. vi.js doesn't have to
 read/write from on-disk files, there is no backing store.
 
+# Developing
+
+- Disable the module as installed through Firefox Add-ons.
+- Go to about:debugging, click "This firefox", click "Load Temporary Add-on"
+  and select a newly built zip file.
+
 # Releasing
 
 - Update firefox/manifest.json with version.
