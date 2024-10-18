@@ -15,8 +15,8 @@ firefox-zip:
 
 node_modules/.bin/tsc:
 	-mkdir -p node_modules/.bin
-	npm ci
+	npm ci --ignore-scripts
 
 install-js0:
 	-mkdir -p node_modules/.bin
-	npm install --save-dev --save-exact typescript@5.1.6
+	npm install --ignore-scripts --save-dev --save-exact typescript@5.1.6
