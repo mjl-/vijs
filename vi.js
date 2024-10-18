@@ -850,35 +850,27 @@
 							forward = !forward;
 						}
 						let rr = forward ? fr : br;
-						const o = rr.offset();
-						if (forward && this.charSearchBefore) {
-							// Ensure we get beyond the character under the cursor.
-							const c0 = rr.get(); // We would pass this anyway below.
-							const c1 = rr.get();
-							if (c0 && c0 !== '\n' && c1 === this.charSearch) {
-								rr.unget(1); // Unget c1, it'll be skipped below.
-							}
-						}
-						cmd.times((i) => {
+						let nomatch = false;
+						cmd.times(() => {
 							// Make progress.
 							if (rr.peek() !== '\n') {
 								rr.get();
 							}
-							rr.gatherx(!forward && !this.charSearchBefore || i < cmd.num - 1, c => c !== this.charSearch && c !== '\n');
+							else {
+								nomatch = true;
+							}
+							rr.gatherx(false, c => c !== this.charSearch && c !== '\n');
 						});
+						if (nomatch) {
+							break;
+						}
 						// Verify there was indeed a match.
-						if (forward || this.charSearchBefore) {
-							if (rr.peek() !== this.charSearch) {
-								break;
-							}
+						if (rr.peek() !== this.charSearch) {
+							break;
 						}
-						else {
-							if (rr.forward().peek() !== this.charSearch) {
-								break;
-							}
-						}
-						if (forward && this.charSearchBefore && o !== rr.offset()) {
-							rr.unget(1);
+						// Beyond character we searched for.
+						if (!this.charSearchBefore) {
+							rr.get();
 						}
 						cur(rr);
 						break;

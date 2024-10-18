@@ -891,36 +891,27 @@ class Edit {
 				forward = !forward
 			}
 			let rr = forward ? fr : br
-			const o = rr.offset()
-			if (forward && this.charSearchBefore) {
-				// Ensure we get beyond the character under the cursor.
-				const c0 = rr.get() // We would pass this anyway below.
-				const c1 = rr.get()
-				if (c0 && c0 !== '\n' && c1 === this.charSearch) {
-					rr.unget(1) // Unget c1, it'll be skipped below.
-				}
-			}
-			cmd.times((i: number) => {
+			let nomatch = false
+			cmd.times(() => {
 				// Make progress.
 				if (rr.peek() !== '\n') {
 					rr.get()
+				} else {
+					nomatch = true
 				}
-				rr.gatherx(!forward && !this.charSearchBefore || i < cmd.num-1, c => c !== this.charSearch && c !== '\n')
+				rr.gatherx(false, c => c !== this.charSearch && c !== '\n')
 			})
-
-			// Verify there was indeed a match.
-			if (forward || this.charSearchBefore) {
-				if (rr.peek() !== this.charSearch) {
-					break
-				}
-			} else {
-				if (rr.forward().peek() !== this.charSearch) {
-					break
-				}
+			if (nomatch) {
+				break
 			}
 
-			if (forward && this.charSearchBefore && o !== rr.offset()) {
-				rr.unget(1)
+			// Verify there was indeed a match.
+			if (rr.peek() !== this.charSearch) {
+				break
+			}
+			// Beyond character we searched for.
+			if (!this.charSearchBefore) {
+				rr.get()
 			}
 			cur(rr)
 			break
