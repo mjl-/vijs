@@ -680,6 +680,10 @@ class Edit {
 			log('motion expand', this.cursor, nc)
 		}
 
+		// For "cw", the word motion is implicit like "iw" for inner word: the last
+		// whitespace should not be replaced.
+		const implicitInner = endLineChar === 'c'
+
 		let k = cmd.get()
 		if (ctrl && cmd.peek() === '') {
 			k = 'ctrl-'+k
@@ -728,21 +732,25 @@ class Edit {
 			break
 		}
 		case 'w':
-			cmd.times(() => {
+			cmd.times((i: number) => {
 				const o = fr.offset()
 				fr.nonwhitespacepunct()
 				if (o  === fr.offset()) {
 					fr.punctuation()
 				}
-				fr.whitespace(true)
+				if (!implicitInner || i < cmd.num-1) {
+					fr.whitespace(true)
+				}
 			})
 			cur(fr)
 			break
 		case 'W':
 			// word
-			cmd.times(() => {
+			cmd.times((i: number) => {
 				fr.nonwhitespace()
-				fr.whitespace(true)
+				if (!implicitInner || i < cmd.num-1) {
+					fr.whitespace(true)
+				}
 			})
 			cur(fr)
 			break
@@ -750,9 +758,10 @@ class Edit {
 			// to begin of (previous) word
 			cmd.times(() => {
 				const o = br.offset()
-				br.whitespacepunct(true)
+				br.whitespace(true)
+				br.nonwhitespacepunct()
 				if (o === br.offset()) {
-					br.nonwhitespacepunct()
+					br.nonwhitespace()
 				}
 			})
 			cur(br)
