@@ -324,8 +324,9 @@ class BackwardSource {
 	}
 }
 
+// For single characters.
 const isSpace = (c: string) => c.trim() === '' // todo: better
-const isPunct = (c: string) => /\p{P}/u.test(c)
+const isPunct = (c: string) => c !== '_' && /\p{P}/u.test(c)
 
 // Reader has convenience functions to navigate text (in a Source). Go to
 // start/end of line, etc. Used to implement vi motion commands.

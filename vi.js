@@ -308,8 +308,9 @@
 			return this.s.charAt(this.o);
 		}
 	}
+	// For single characters.
 	const isSpace = (c) => c.trim() === ''; // todo: better
-	const isPunct = (c) => /\p{P}/u.test(c);
+	const isPunct = (c) => c !== '_' && /\p{P}/u.test(c);
 	// Reader has convenience functions to navigate text (in a Source). Go to
 	// start/end of line, etc. Used to implement vi motion commands.
 	class Reader {
