@@ -1988,15 +1988,24 @@
 				case 'v':
 					{
 						this.setMode('visual');
+						this.visualStr = '';
 						return;
 					}
 				case 'V':
 					{
-						br.line(false);
-						fr.line(false);
-						this.cursor = new Cursor(fr.offset(), br.offset());
+						let [s, e] = this.cursor.ordered();
+						const xfr = new Reader(e, true, this.e.value);
+						const xbr = new Reader(s, false, this.e.value);
+						xbr.line(false);
+						xfr.line(false);
+						[s, e] = [xbr.offset(), xfr.offset()];
+						if (!this.cursor.isForward()) {
+							[s, e] = [e, s];
+						}
+						this.cursor = new Cursor(e, s);
 						this.e.setSelectionRange(...this.cursor.ordered());
 						this.setMode('visualline');
+						this.visualStr = '';
 						return;
 					}
 				case 'd':
@@ -2043,6 +2052,7 @@
 				case 'ctrl-e':
 					// viewport lines down, we can't tell if cursor is visible, so we don't try to update.
 					this.e.scrollBy(0, cmd.num * lineheight);
+					this.visualStr = '';
 					return;
 				case '<':
 					{
