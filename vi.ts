@@ -473,6 +473,9 @@ class TextHist {
 
 type mode = 'insert' | 'command' | 'visual' | 'visualline'
 
+// From https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions#escaping
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // $& means the whole matched string
+
 // Edit tracks vi editing state for a textarea or input element.
 class Edit {
 	// We highlight elements with a box-shadow & outline color, storing the originals
@@ -495,10 +498,10 @@ class Edit {
 	charSearchForward = true
 	charSearchBefore = false // Stop before character.
 
-	// For searching. Only with "*" and "n" and "N" for now.
-	lastSearch = ''
-	lastSearchRegexp: RegExp | undefined
-	lastSearchRegexpString = ''
+	// For searching with "/", "?", or next with "*", "#", and "n", "N".
+	searchLast = ''
+	searchRegexp: RegExp | undefined // Cached.
+	searchReverse = false
 
 	// For undo/redo.
 	history: TextHist[] = []
@@ -510,6 +513,10 @@ class Edit {
 	lastCommand = '' // Empty command with lastCommandText is a basic text insert.
 	needLastCommandText = false
 	lastCommandText = '' // Text inserted as part of last command.
+
+	// For arrows up/down.
+	searchHistory: string[] = []
+	exHistory: string[] = []
 
 	// handlers bound to this...
 	keydown: (e: Event) => void
@@ -573,9 +580,11 @@ class Edit {
 	}
 
 	// Enable editing mode, taking control of the element.
-	on() {
+	on(mode?: mode) {
 		this.cursor = this.elemCursor()
-		if (this.cursor.cur === this.cursor.start) {
+		if (mode) {
+			this.setMode(mode)
+		} else if (this.cursor.cur === this.cursor.start) {
 			this.setMode('command')
 		} else {
 			this.setMode('visual')
@@ -1141,67 +1150,231 @@ class Edit {
 		return this.e.value.substring(s, e)
 	}
 
+	// ex interprets a single ex command, string s is non-empty.
+	// Throws errors when command cannot be handled (e.g. invalid syntax).
+	ex(mode: mode, s: string) {
+		// todo: parse range more completely: number offsets/ranges (including negative) for lines, or . (dot) for current line, or $ for last line, with comma as separator in between start and end. for now, we just recognize a few common ranges explicitly and handle visual selection implicitly.
+		var number = 0
+		var numberstr = ''
+		const parseNumber = () => {
+			let x = ''
+			while (s !== '' && s.charAt(0) >= '0' && s.charAt(0) <= '9') {
+				x += s.charAt(0)
+				s = s.substring(1)
+			}
+			if (!x) {
+				return false
+			}
+			number = parseInt(x)
+			numberstr = x
+			return true
+		}
+
+		let start = 0
+		let end = 0
+		if (s.startsWith('%')) {
+			// Select all text.
+			start = 0
+			end = this.e.value.length
+			s = s.substring(1)
+		} else if (parseNumber()) {
+			// Select specific line number.
+			const fr = new Reader(0, true, this.e.value)
+			let o = fr.offset()
+			for (let i = 1; i < number; i++) {
+				fr.line(true)
+				if (fr.offset() === o) {
+					break
+				}
+				o = fr.offset()
+			}
+			start = fr.offset()
+			fr.line(false)
+			end = fr.offset()
+		} else if (mode === 'visual' || mode === 'visualline') {
+			// Selection when in Visual mode.
+			// todo: recognize '< and '>, and insert them on typing ':'? are these registers?
+			[start, end] = this.cursor.ordered()
+		} else {
+			// Select current line.
+			const br = new Reader(this.cursor.cur, false, this.e.value)
+			const fr = new Reader(this.cursor.cur, true, this.e.value)
+			br.line(false)
+			fr.line(false)
+			start = br.offset()
+			end = fr.offset()
+		}
+
+		// todo: implement more commands? like 'd' for delete, 'g', etc. let's wait until users want it...
+		if (!s) {
+			// No command. If input was a number, move to the line.
+			if (numberstr) {
+				this.setCursor(start)
+				return
+			}
+			throw new Error('unknown range/command')
+		}
+		if (s.startsWith('s')) {
+			s = s.substring(1)
+			const sep = s.charAt(0)
+			if (!sep) {
+				throw new Error('missing separator after s')
+			}
+			s = s.substring(1)
+
+			// read from x, stop on non-escaped sep.
+			const parseWithEscape = (x: string): [string, string] => {
+				let r = ''
+				const iter = x[Symbol.iterator]()
+				let p = iter.next()
+				while (!p.done) {
+					const c = p.value
+					if (c === sep) {
+						return [r, x.substring(r.length+1)]
+					} else if (c === '\\') {
+						p = iter.next()
+						if (p.done) {
+							throw new Error('unfinished escape')
+						}
+						const nc = p.value
+						if (nc !== sep) {
+							r += c
+						}
+						r += nc
+					} else {
+						r += c
+					}
+					p = iter.next()
+				}
+				throw new Error('missing ending escape')
+			}
+
+			let restr: string
+			let repl: string
+			;[restr, s] = parseWithEscape(s)
+			;[repl, s] = parseWithEscape(s)
+			// JS recognizes replacement strings like "$&", "$1", "$2", while users would
+			// expect "&", "\1", "\2". We mostly follow js regexp functionality, but we replace
+			// the common replacement strings into js equivalents. We still also leave js
+			// specials intact for now. Users will have to cope, or we'll need more elaborate
+			// code to do the conversion.
+			repl = repl.replaceAll('&', '$$&')
+			for (let i = 1; i <= 9; i++) {
+				repl = repl.replaceAll('\\'+i, '$$'+i)
+			}
+			let gflag = ''
+			if (s === 'g') {
+				gflag = 'g'
+			} else if (!s) {
+				throw new Error('unrecognized trailing text '+s)
+			}
+			log('replace', mode, {start, end, restr, repl, gflag})
+			const regexp = new RegExp(restr, gflag+'v')
+			const cur = new Cursor(end, start)
+			const otext = this.read(cur)
+			const ntext = otext.split('\n').map(line => line.replace(regexp, repl)).join('\n')
+			const ocur = this.cursor
+			this.replace(cur, ntext, false)
+			if (mode === 'visual' || mode === 'visualline') {
+				this.cursor = new Cursor(start+ntext.length, start)
+			} else {
+				this.cursor = ocur
+			}
+			this.e.setSelectionRange(...this.cursor.ordered())
+		} else {
+			throw new Error('unknown command')
+		}
+	}
+
+	// Search for a string, interpreted as regular expression.
+	// Returns offset of start of match, or < 0 if no match.
+	search(offset: number, s: string, reverse: boolean): number {
+		this.searchReverse = reverse
+		return this.searchNext(offset, s, false)
+	}
+
 	// Search finds the next occurrence of lastSearch/lastSearchRegexp and selects it
 	// and scrolls to it.
 	//
 	// The first character determines the kind of search. If slash, the remainder is
 	// interpreted as regular expression. If space (and currently anything else), the
 	// remainder is interpreted as a literal string.
-	search(reverse: boolean): boolean {
-		if (!this.lastSearch) {
-			return false
+	searchNext(offset: number, s: string, reverse: boolean): number {
+		if (s !== this.searchLast) {
+			this.searchRegexp = new RegExp(s, 'v') // May throw error.
+			this.searchLast = s
 		}
-		const t = this.lastSearch.substring(1)
-		if (this.lastSearch.charAt(0) !== '/') {
-			return this.searchText(t, reverse)
-		}
-		if (t !== this.lastSearchRegexpString || !this.lastSearchRegexp) {
-			this.lastSearchRegexp = new RegExp(t, 'v')
-			this.lastSearchRegexpString = t
-		}
-		return this.searchRegexp(this.lastSearchRegexp, reverse)
+		return this.searchNextRegexp(offset, reverse)
 	}
 
-	searchText(t: string, reverse: boolean): boolean {
+	searchNextRegexp(offset: number, reverse: boolean): number {
+		if (!this.searchRegexp) {
+			return -1
+		}
+		if (this.searchReverse) {
+			reverse = !reverse
+		}
 		if (reverse) {
-			return this.searchTextReverse(t)
+			return this.searchPrevRegexp(offset)
 		}
 
-		const after = this.read(new Cursor(this.cursor.cur+1, this.e.value.length))
-		let i = after.indexOf(t)
-		if (i >= 0) {
-			this.setCursor(this.cursor.cur+1+i)
-			return true
+		const after = this.read(new Cursor(offset+1, this.e.value.length))
+		let r = this.searchRegexp.exec(after)
+		if (r !== null) {
+			return offset+1+r.index
 		}
-		const before = this.read(new Cursor(0, this.cursor.cur))
-		i = before.indexOf(t)
-		if (i >= 0) {
-			this.setCursor(i)
-			return true
+		const before = this.read(new Cursor(0, offset))
+		r = this.searchRegexp.exec(before)
+		if (r !== null) {
+			return r.index
 		}
-		return false
+		return -1
 	}
 
-	searchTextReverse(t: string) {
-		const before = this.read(new Cursor(0, this.cursor.cur))
-		let i = before.lastIndexOf(t)
-		if (i >= 0) {
-			this.setCursor(i)
-			return true
-		}
-		const after = this.read(new Cursor(this.cursor.cur+1, this.e.value.length))
-		i = after.lastIndexOf(t)
-		if (i >= 0) {
-			this.setCursor(this.cursor.cur+1+i)
-			return true
-		}
-		return false
-	}
+	searchPrevRegexp(offset: number): number {
+		// todo: find out how to more efficiently search backwards. we now cycle through all matches from the start, keeping the last...
 
-	searchRegexp(re: RegExp, reverse: boolean): boolean {
-		// todo: not implemented yet, code cannot be reached
-		log('searchRegexp', re, reverse)
-		return false
+		if (!this.searchRegexp) {
+			return -1
+		}
+
+		let index = -1
+
+		const before = this.read(new Cursor(0, offset))
+		let s = before
+		let o = 0
+		for (;;) {
+			const r = this.searchRegexp.exec(s)
+			if (!r) {
+				if (index >= 0) {
+					return index
+				}
+				break
+			}
+			o += r.index
+			index = o
+			s = s.substring(r.index+1)
+			o += 1
+		}
+
+		const after = this.read(new Cursor(offset+1, this.e.value.length))
+		s = after
+		o = offset+1
+		for (;;) {
+			const r = this.searchRegexp.exec(s)
+			if (!r) {
+				if (index >= 0) {
+					return index
+				}
+				break
+			}
+			o += r.index
+			index = o
+			s = s.substring(r.index+1)
+			o += 1
+		}
+
+		return -1
 	}
 
 	// Indent text covered by cursor.
@@ -1767,33 +1940,11 @@ class Edit {
 			this.e.scrollBy(0, cmd.num*lineheight)
 			break
 		case '*':
-		{
-			br.nonwhitespacepunct()
-			fr.nonwhitespacepunct()
-			const s = this.read(new Cursor(br.offset(), fr.offset()))
-			this.lastSearch = " " + s
-			this.search(false)
-			break
-		}
 		case '#':
-		{
-			br.nonwhitespacepunct()
-			fr.nonwhitespacepunct()
-			const s = this.read(new Cursor(br.offset(), fr.offset()))
-			this.lastSearch = " " + s
-			this.search(true)
-			break
-		}
 		case 'n':
-		{
-			this.search(false)
-			break
-		}
 		case 'N':
-		{
-			this.search(true)
+			this.commandSearch(cmd, fr, br, k)
 			break
-		}
 		case '.':
 		{
 			const [lastCmd, lastText] = [this.lastCommand, this.lastCommandText]
@@ -1867,6 +2018,11 @@ class Edit {
 		case 'ctrl-f':
 			this.e.scrollBy(0, this.e.scrollHeight)
 			break
+		case '/':
+		case '?':
+		case ':':
+			this.extraline(cmd, k)
+			break
 		default:
 			cmd = new Cmd(this.commandStr)
 			cmd.number()
@@ -1894,6 +2050,7 @@ class Edit {
 
 		const [c0] = this.cursor.ordered()
 
+		cmd.number()
 		let k = cmd.get()
 		if (ctrl && cmd.peek() === '') {
 			k = 'ctrl-'+k
@@ -2021,6 +2178,19 @@ class Edit {
 			}
 			break
 		}
+		case '*':
+		case '#':
+		case 'n':
+		case 'N':
+			this.commandSearch(cmd, fr, br, k)
+			this.visualStr = ''
+			return
+		case '/':
+		case '?':
+		case ':':
+			this.extraline(cmd, k)
+			this.visualStr = ''
+			return
 		default:
 			cmd = new Cmd(this.visualStr)
 			cmd.number()
@@ -2074,6 +2244,165 @@ class Edit {
 		this.visualStr = ''
 		this.setCursor(this.cursor.cur)
 		this.setMode('command')
+	}
+
+	// commandSearchMove adjusts the cursor/selection after a search, based on mode.
+	commandSearchMove(mode: mode, reverse: boolean, offset: number) {
+		// Adjust offset to cover whole line.
+		if (mode === 'visualline') {
+			const r = new Reader(offset, !reverse, this.e.value)
+			r.line(!reverse)
+			offset = r.offset()
+		}
+
+		if (mode === 'visual' || mode === 'visualline') {
+			this.cursor = new Cursor(offset, this.cursor.start)
+			this.e.setSelectionRange(...this.cursor.ordered())
+		} else {
+			this.setCursor(offset)
+		}
+	}
+
+	// commandSearch handles a search command key (k), for both command and visual modes.
+	// cmd is used for number of times to execute the command.
+	commandSearch(cmd: Cmd, fr: Reader, br: Reader, k: string) {
+		switch (k) {
+		case '*':
+		case '#':
+		{
+			br.nonwhitespacepunct()
+			fr.nonwhitespacepunct()
+			const s = this.read(new Cursor(br.offset(), fr.offset()))
+			const sre = "\\b" + escapeRegExp(s) + "\\b"
+			this.searchReverse = k === '#'
+			let o = this.cursor.cur
+			for (let i = 0; i < cmd.num; i++) {
+				const no = this.searchNext(o, sre, false)
+				if (no < 0 || no === o) {
+					break
+				}
+				o = no
+			}
+			if (o >= 0) {
+				this.commandSearchMove(this.mode, this.searchReverse, o)
+			}
+			break
+		}
+		case 'n':
+		case 'N':
+		{
+			if (!this.searchRegexp) {
+				break
+			}
+			let o = this.cursor.cur
+			for (let i = 0; i < cmd.num; i++) {
+				const no = this.searchNextRegexp(o, k === 'N')
+				if (no < 0 || no === o) {
+					break
+				}
+				o = no
+			}
+			if (o >= 0) {
+				let reverse = k === 'N'
+				if (this.searchReverse) {
+					reverse = !reverse
+				}
+				this.commandSearchMove(this.mode, reverse, o)
+			}
+			break
+		}
+		}
+	}
+
+	// Add input element/line to DOM for a search or ex command.
+	extraline(cmd: Cmd, k: string) {
+		const origMode = this.mode
+		this.off()
+
+		const box = document.createElement('div')
+		const r = this.e.getBoundingClientRect()
+		box.style.position = 'absolute'
+		// todo: place above if below would make it fall outside the document? right now, we would enlarge the document and setting focus scrolls the page
+		box.style.left = Math.floor(r.x)+'px'
+		box.style.top = Math.ceil(r.y + r.height+2)+'px'
+		box.style.width = Math.floor(r.width)+'px'
+		box.style.display = 'flex'
+		box.style.backgroundColor = 'white'
+		box.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.2)'
+		const input = document.createElement('input')
+		input.style.width = '100%'
+		const op = document.createElement('div')
+		op.style.padding = '0 .5em'
+		op.appendChild(document.createTextNode(k))
+		box.append(op, input)
+		// We add element to body, to prevent messing with expected DOM structure and related styling.
+		document.body.appendChild(box) // todo: find position relative to document.body?
+		input.focus()
+		const cancel = () => {
+			if (box.parentNode) {
+				box.remove()
+			}
+			this.e.focus()
+			this.on(origMode)
+		}
+		input.addEventListener('blur', () => {
+			cancel()
+		})
+		let history = k === ':' ? this.exHistory : this.searchHistory
+		let histindex = history.length
+		input.addEventListener('keydown', (ev: KeyboardEvent) => {
+			log('input key', ev.key)
+			if (ev.key === 'Escape') {
+				ev.preventDefault()
+				cancel()
+			} else if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
+				ev.preventDefault()
+				const i = histindex + (ev.key === 'ArrowUp' ? -1 : 1)
+				if (i >= 0) {
+					if (i >= history.length) {
+						input.value = ''
+						histindex = history.length
+					} else {
+						input.value = history[i]
+						histindex = i
+					}
+				}
+			} else if (ev.key === 'Enter') {
+				ev.preventDefault()
+				if (!this.e.value) {
+					cancel()
+					return
+				}
+				if (k === ':') {
+					try {
+						this.ex(origMode, input.value)
+					} catch (err: any) {
+						// Keep line, so user can fix it and try again.
+						log('ex error', err)
+						// note: without setTimeout, firefox will throw a NS_ERROR_FAILURE error
+						// We are still not logging, as that would blur the input element and hide it.
+						// setTimeout(() => alert(err.message), 0)
+						return
+					}
+				} else {
+					// todo: could implement offset after closing /: /regexp/2 searches for regexp, then moves 2 lines down.
+					let o = this.cursor.cur
+					for (let i = 0; i < cmd.num; i++) {
+						const no = this.search(o, input.value, k === '?')
+						if (no < 0 || o === no) {
+							break
+						}
+						o = no
+					}
+					if (o >= 0) {
+						this.commandSearchMove(origMode, k === '?', o)
+					}
+				}
+				history.push(input.value)
+				histindex = history.length
+				cancel()
+			}
+		})
 	}
 }
 

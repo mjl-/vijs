@@ -55,7 +55,7 @@ Access to the clipboard is only explicitly with the "y" and "p" keys. Commands
 that remove/replace text don't change the clipboard.
 
 Not all input types are supported, browsers only allow editing selections on
-some files: text, search, url, tel, password. Others don't work: email, time,
+some types: text, search, url, tel, password. Others don't work: email, time,
 etc.
 
 Popular messaging web applications have custom UI elements for sending messages,
@@ -72,11 +72,7 @@ firefox as "back" and can't be intercepted.
 - Plenty of vi/vim keys haven't been implemented yet. People typically use a
   subset of all the many vi/vim key bindings. Please submit a PR for commands
   you're missing and want. Keep the code maintainable.
-- Custom regexp search. Search only works with */# and n/N at the moment. Need
-  an additional input element to type the search regexp (e.g. temporarily on shown
-  on top of the textarea).
-- Edit/ex mode, in additional input element (only for textareas).
-- Replace mode (though not sure if worth it).
+- Replace mode.
 - Repeat doesn't always work nicely with commands on visual selections.
 - Implement some motion commands more precisely, also dependent on mode.
 - Chrome/chromium add-on, if feasible.
