@@ -2280,10 +2280,12 @@
 			this.off();
 			const box = document.createElement('div');
 			const r = this.e.getBoundingClientRect();
+			const xoff = window.scrollX;
+			const yoff = window.scrollY;
 			box.style.position = 'absolute';
 			// todo: place above if below would make it fall outside the document? right now, we would enlarge the document and setting focus scrolls the page
-			box.style.left = Math.floor(r.x) + 'px';
-			box.style.top = Math.ceil(r.y + r.height + 2) + 'px';
+			box.style.left = Math.floor(xoff + r.x) + 'px';
+			box.style.top = Math.ceil(yoff + r.y + r.height + 2) + 'px';
 			box.style.width = Math.floor(r.width) + 'px';
 			box.style.display = 'flex';
 			box.style.backgroundColor = 'white';
