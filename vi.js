@@ -32,7 +32,19 @@
 		}
 		return await window.navigator.clipboard.readText();
 	};
-	// wrap text at 78 characters, keep leading spaces or tabs when wrapping, and recognizing lines starting with "- " as enumeration.
+	// wrapRepeatLead returns any string of s that should be repeated on the next line when wrapping.
+	// The string does not include spaces, it is a word (token on a line) that can be wrapped.
+	const wrapRepeatLead = (s) => {
+		for (const prefix of ['#', '>', '//']) {
+			if (s.startsWith(prefix)) {
+				return prefix;
+			}
+		}
+		return '';
+	};
+	// Wrap text at 78 characters, keep leading spaces or tabs when wrapping, and
+	// recognizing lines starting with "- " as enumeration, and starting each next line
+	// with a "#" or "> " when the start of the line does.
 	const wrap = (s) => {
 		// Rather hacky, to be rewritten more properly.
 		// We read the input into tokens: a word, space, newline, leading whitespace.
@@ -88,6 +100,8 @@
 		let linelen = 0;
 		let lineleadws = '';
 		let moreleadws = ''; // empty, or set to two spaces when first token on line was "-" (enumeration).
+		let linehaveinputword = false; // Whether we've seen a word for this input line.
+		let lineprefix = ''; // Set to '# ' or '> ' or '// ' when start of line contained that.
 		let out = [];
 		for (let i = 0; i < tokens.length; i++) {
 			// Current, prev and next token and data.
@@ -96,6 +110,10 @@
 			const [nt, nc] = tokens[i + 1] || ['', ''];
 			const [nnt, nnc] = tokens[i + 2] || ['', ''];
 			if (t === 'word') {
+				if (!linehaveinputword) {
+					lineprefix = wrapRepeatLead(c);
+					linehaveinputword = true;
+				}
 				// If it doesn't fit, wrap by starting with new line.
 				if (linelen > 0 && linelen + c.length >= 78) {
 					out.push(['newline', '\n']);
@@ -103,7 +121,10 @@
 					if (lineleadws || moreleadws) {
 						out.push(['leadws', lineleadws + moreleadws]);
 					}
-					linelen = lineleadws.length + moreleadws.length;
+					if (lineprefix) {
+						out.push(['word', lineprefix]);
+					}
+					linelen = lineleadws.length + moreleadws.length + lineprefix.length;
 				}
 				else if (out.length > 0 && out[out.length - 1][0] === 'word') {
 					out.push(['space', ' ']);
@@ -127,7 +148,10 @@
 				else {
 					out.push(['newline', '\n']);
 					out.push(['leadws', lineleadws + moreleadws]);
-					linelen = lineleadws.length + moreleadws.length;
+					if (lineprefix) {
+						out.push(['word', lineprefix]);
+					}
+					linelen = lineleadws.length + moreleadws.length + lineprefix.length;
 				}
 			}
 			else if (t === 'newline') {
@@ -142,6 +166,8 @@
 				moreleadws = '';
 				out.push(['newline', '\n']);
 				linelen = 0;
+				linehaveinputword = false;
+				lineprefix = '';
 			}
 			else if (t === 'leadws') {
 				linelen = c.length;
