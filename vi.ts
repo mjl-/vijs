@@ -2368,6 +2368,7 @@ class Edit {
 		box.style.display = 'flex'
 		box.style.backgroundColor = 'white'
 		box.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.2)'
+		box.style.zIndex = '2147483647' // Max value.
 		const input = document.createElement('input')
 		input.style.width = '100%'
 		const op = document.createElement('div')
