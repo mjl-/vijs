@@ -1732,8 +1732,14 @@ class Edit {
 		case 'o':
 		{
 			fr.line(true)
-			modified = this.replace(new Cursor(fr.offset(), fr.offset()), '\n', false)
-			this.setCursor(fr.offset())
+			let repl = '\n'
+			// If file doesn't end with newline, add both the missing newline and an additional line.
+			let o = fr.offset()
+			if (o === 0 || this.read(new Cursor(o, o-1)) !== '\n') {
+				repl = '\n\n'
+			}
+			modified = this.replace(new Cursor(o, o), repl, false)
+			this.setCursor(o+repl.length-1)
 			this.off()
 			break
 		}
