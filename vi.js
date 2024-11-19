@@ -1021,7 +1021,7 @@
 					{
 						if (cmd.numStr === "") {
 							// to eof
-							fr = new Reader(this.e.value.length - 1, true, this.e.value);
+							fr = new Reader(this.e.value.length, true, this.e.value);
 							cur(fr);
 							break;
 						}
