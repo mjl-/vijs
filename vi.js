@@ -10,27 +10,60 @@
 			console.debug(...l);
 		}
 	};
-	// When accessing clipboard, we first request permission. Surprising the
-	// browser isn't doing that automatically (perhaps special behaviour for
-	// addons? or probably it does check anyway and this is superfluous). We
-	// actually ignore whatever permission we think we got. If we don't have
-	// permission, we'll get an error to read/write the clipboard anyway. We just
-	// want to ensure the browser asks the user if the browser supports it.
+	// Before accessing the clipboard, we request permission. Should be a no-op
+	// when we already have permission. Unfortunately, the API doesn't actually
+	// seem to exist in firefox, may be related to bugs around async and event
+	// handlers, or because of the wrong execution context. The firefox
+	// documentation is dispersed/conflicting, and it's hard to tell what's real.
+	// Chromium does the only sensible thing: Just ask the user for permissions
+	// when the clipboard API is used. Anyway, we will try to ask for permissions,
+	// but just skip that step if it's not possible. If accessing the clipboard
+	// doesn't work, we'll use a fake internal buffer and warn about it once. This
+	// makes the common case of 'y' and 'p' to move text around work.
+	let clipboardText = '';
+	let clipboardWarned = false;
+	const checkClipboard = () => {
+		if (window.navigator.clipboard) {
+			return;
+		}
+		if (!window.isSecureContext) {
+			throw new Error('clipboard not available in insecure context (e.g. plain http), or permissions for clipboard not yet granted');
+		}
+		throw new Error('clipboard api not implemented by browser, or permissions for clipboard not yet granted');
+	};
 	const clipboardWriteText = async (s) => {
 		const w = window;
 		!w.browser?.permissions?.request || await w.browser.permissions.request({ permissions: ['clipboardWrite'] });
-		if (!window.navigator.clipboard) {
-			throw new Error('clipboard not available in insecure context (e.g. plain http)');
+		try {
+			clipboardText = s;
+			checkClipboard();
+			await window.navigator.clipboard.writeText(s);
 		}
-		await window.navigator.clipboard.writeText(s);
+		catch (err) {
+			log('write to clipboard', err);
+			if (!clipboardWarned) {
+				alert('vi editing mode: ' + err.message + '; will use internal buffer for further clipboard operations');
+				clipboardWarned = true;
+			}
+		}
 	};
 	const clipboardReadText = async () => {
 		const w = window;
 		!w.browser?.permissions?.request || await w.browser.permissions.request({ permissions: ['clipboardRead'] });
-		if (!window.navigator.clipboard) {
-			throw new Error('clipboard not available in insecure context (e.g. plain http)');
+		try {
+			checkClipboard();
+			const s = await window.navigator.clipboard.readText();
+			clipboardText = s;
+			return s;
 		}
-		return await window.navigator.clipboard.readText();
+		catch (err) {
+			log('read from clipboard', err);
+			if (!clipboardWarned) {
+				alert('vi editing mode: ' + err.message + '; will use internal buffer for further clipboard operations');
+				clipboardWarned = true;
+			}
+			return clipboardText;
+		}
 	};
 	// wrapRepeatLead returns any string of s that should be repeated on the next line when wrapping.
 	// The string does not include spaces, it is a word (token on a line) that can be wrapped.
