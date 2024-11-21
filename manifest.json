@@ -1,11 +1,14 @@
 {
-	"manifest_version": 2,
+	"manifest_version": 3,
 	"name": "Vi Editing Mode",
-	"version": "0.0.9",
+	"version": "0.0.10",
 	"description": "Automatically and non-intrusively add a vi editing mode to all textareas/inputs. Behaviour remains unchanged (like insert mode), hitting Escape enables command mode.",
 	"icons": {
-		"48": "icon-48.png",
-		"96": "icon-96.png"
+		"16": "icons/icon-16.png",
+		"32": "icons/icon-32.png",
+		"48": "icons/icon-48.png",
+		"96": "icons/icon-96.png",
+		"128": "icons/icon-128.png"
 	},
 	"content_scripts": [
 		{

@@ -1,5 +1,5 @@
 vi.js - give all input elements (input, textarea, select) on a page a vi editing mode
-vi-editing-mode - firefox addon that adds vi.js to all pages
+vi-editing-mode - firefox addon and chromium extension that adds vi.js to all pages
 
 Automatically and non-intrusively add a vi editing mode to all textareas/inputs.
 Behaviour remains unchanged (like insert mode), hitting Escape enables command
@@ -66,18 +66,9 @@ Some applications use "Escape" as a shortcut to cancel. Use "ctrl-{" as
 alternative.  Unfortunately, the obvious alternative "ctrl-[" is interpreted by
 firefox as "back" and can't be intercepted.
 
-
-# Todo
-
-- Plenty of vi/vim keys haven't been implemented yet. People typically use a
-  subset of all the many vi/vim key bindings. Please submit a PR for commands
-  you're missing and want. Keep the code maintainable.
-- Replace mode.
-- Repeat doesn't always work nicely with commands on visual selections.
-- Implement some motion commands more precisely, also dependent on mode.
-- Chrome/chromium add-on, if feasible.
-- Package up vi.js to a decent module registry (jsr?).
-- Wait for someone to explain how everyone else gets vi editing in their browsers...
+Plenty of vi/vim keys haven't been implemented yet. People typically use a
+subset of all the many vi/vim key bindings. Please submit a PR for commands
+you're missing and want. Keep the code maintainable.
 
 # Other work
 
@@ -103,13 +94,19 @@ read/write from on-disk files, there is no backing store.
 
 # Developing
 
-- Disable the module as installed through Firefox Add-ons.
-- Go to about:debugging, click "This firefox", click "Load Temporary Add-on"
-  and select a newly built zip file.
+First disable the currently installed addon/extension.
+
+For firefox, go to about:debugging, click "This firefox", click "Load Temporary
+Add-on" and select a newly built zip file.
+
+For chromium, open the extensions page, enable developer mode (top right),
+click "Load unpacked" on the left, and select the vijs directory.
 
 # Releasing
 
-- Update firefox/manifest.json with version.
+- Update manifest.json with version.
 - Create annotated tag.
-- Run "make firefox-zip", which writes a zip file to local/.
-- Upload zip file at mozilla addon pages.
+- Run "make zip", which writes a zip file to local/.
+- Upload zip file to mozilla addon pages and chrome web store developer dashboard:
+	https://addons.mozilla.org/en-US/developers/addon/vi-editing-mode/versions
+	https://chrome.google.com/webstore/devconsole/
