@@ -19,5 +19,10 @@
 	"optional_permissions": [
 		"clipboardRead",
 		"clipboardWrite"
-	]
+	],
+	"browser_specific_settings": {
+		"gecko": {
+			"id": "{0d4f406a-73d2-45c6-b25f-928f933d6178}"
+		}
+	}
 }
