@@ -108,5 +108,9 @@ click "Load unpacked" on the left, and select the vijs directory.
 - Create annotated tag.
 - Run "make zip", which writes a zip file to local/.
 - Upload zip file to mozilla addon pages and chrome web store developer dashboard:
-	https://addons.mozilla.org/en-US/developers/addon/vi-editing-mode/versions
-	https://chrome.google.com/webstore/devconsole/
+	- https://addons.mozilla.org/en-US/developers/addon/vi-editing-mode/versions
+	- https://chrome.google.com/webstore/devconsole/
+
+Public URLs:
+- https://addons.mozilla.org/en-US/firefox/addon/vi-editing-mode/
+- https://chromewebstore.google.com/detail/vi-editing-mode/fjencagempclanimjkpljinmknpabbbp
